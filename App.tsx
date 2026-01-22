@@ -1,3 +1,4 @@
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 
@@ -9,8 +10,9 @@ import SettingsScreen from './src/screens/SettingsScreen';
 
 type Tab = 'overview' | 'tasks' | 'lists' | 'expenses' | 'settings';
 
-export default function App() {
+function AppContent() {
   const [tab, setTab] = useState<Tab>('overview');
+  const insets = useSafeAreaInsets();
 
   const renderScreen = () => {
     switch (tab) {
@@ -31,7 +33,7 @@ export default function App() {
     <View style={styles.container}>
       <View style={styles.content}>{renderScreen()}</View>
 
-      <View style={styles.tabBar}>
+      <View style={[styles.tabBar, { paddingBottom: insets.bottom || 8 }]}>
         {(['overview', 'tasks', 'lists', 'expenses', 'settings'] as Tab[]).map(
           t => (
             <TouchableOpacity
@@ -50,6 +52,14 @@ export default function App() {
   );
 }
 
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <AppContent />
+    </SafeAreaProvider>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { flex: 1 },
@@ -58,6 +68,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderColor: '#ddd',
     paddingVertical: 8,
+    backgroundColor: '#fff',
   },
   tab: { flex: 1, alignItems: 'center' },
   active: { fontWeight: 'bold' },
