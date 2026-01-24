@@ -2,6 +2,10 @@ import * as Crypto from 'expo-crypto';
 import { getDatabase } from './database';
 import type { Task, List } from '../types/models';
 
+export interface TaskWithListName extends Task {
+  list_name?: string;
+}
+
 /**
  * Get all tasks for a specific list
  */
@@ -83,17 +87,36 @@ export async function createList(input: {
 }
 
 /**
- * Soft-delete a list
+ * Soft-delete a list and all its tasks
  */
 export async function deleteList(listId: string): Promise<void> {
   const db = await getDatabase();
 
-  await db.runAsync(
-    `UPDATE lists
-     SET is_archived = 1, updated_at = datetime('now')
-     WHERE id = ?`,
-    [listId]
-  );
+  // Use transaction to ensure atomicity
+  await db.execAsync('BEGIN TRANSACTION;');
+  
+  try {
+    // Soft-delete the list
+    await db.runAsync(
+      `UPDATE lists
+       SET is_archived = 1, updated_at = datetime('now')
+       WHERE id = ?`,
+      [listId]
+    );
+
+    // Soft-delete all tasks in this list
+    await db.runAsync(
+      `UPDATE tasks
+       SET deleted_at = datetime('now'), updated_at = datetime('now')
+       WHERE list_id = ? AND deleted_at IS NULL`,
+      [listId]
+    );
+
+    await db.execAsync('COMMIT;');
+  } catch (error) {
+    await db.execAsync('ROLLBACK;');
+    throw error;
+  }
 }
 
 /**
@@ -102,6 +125,7 @@ export async function deleteList(listId: string): Promise<void> {
 export async function createTask(input: {
   title: string;
   list_id: string;
+  due_date?: number; // NEW: Optional due date
 }): Promise<void> {
   const db = await getDatabase();
 
@@ -110,39 +134,67 @@ export async function createTask(input: {
       id,
       title,
       list_id,
+      due_date,
       completed,
       created_at,
       updated_at
-    ) VALUES (?, ?, ?, 0, datetime('now'), datetime('now'))`,
+    ) VALUES (?, ?, ?, ?, 0, datetime('now'), datetime('now'))`,
     [
       Crypto.randomUUID(),
       input.title,
       input.list_id,
+      input.due_date ?? null,
     ]
   );
 }
 
 /**
- * Update task (completion toggle)
+ * Update task (supports completion toggle, title edit, and due date)
  */
 export async function updateTask(input: {
   id: string;
-  completed: boolean;
+  completed?: boolean;
+  title?: string;
+  due_date?: number | null; // NEW: Optional due date (null = remove)
 }): Promise<void> {
   const db = await getDatabase();
 
+  // Build dynamic update query based on provided fields
+  const updates: string[] = [];
+  const values: any[] = [];
+
+  if (input.completed !== undefined) {
+    updates.push('completed = ?');
+    values.push(input.completed ? 1 : 0);
+    
+    if (input.completed) {
+      updates.push("completed_at = datetime('now')");
+    } else {
+      updates.push('completed_at = NULL');
+    }
+  }
+
+  if (input.title !== undefined) {
+    updates.push('title = ?');
+    values.push(input.title);
+  }
+
+  if (input.due_date !== undefined) {
+    updates.push('due_date = ?');
+    values.push(input.due_date);
+  }
+
+  // Always update the updated_at timestamp
+  updates.push("updated_at = datetime('now')");
+
+  // Add the id at the end for WHERE clause
+  values.push(input.id);
+
   await db.runAsync(
     `UPDATE tasks
-     SET
-       completed = ?,
-       completed_at = ?,
-       updated_at = datetime('now')
+     SET ${updates.join(', ')}
      WHERE id = ?`,
-    [
-      input.completed ? 1 : 0,
-      input.completed ? "datetime('now')" : null,
-      input.id,
-    ]
+    values
   );
 }
 
@@ -158,4 +210,45 @@ export async function deleteTask(taskId: string): Promise<void> {
      WHERE id = ?`,
     [taskId]
   );
+}
+
+/**
+ * Task with list name (for cross-list views)
+ */
+export interface TaskWithListName extends Task {
+  list_name?: string;
+}
+
+/**
+ * Get all active tasks across all lists
+ * Includes list name via JOIN
+ */
+export async function getAllActiveTasks(): Promise<TaskWithListName[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<any>(
+    `SELECT 
+      t.*,
+      l.name as list_name
+     FROM tasks t
+     LEFT JOIN lists l ON t.list_id = l.id
+     WHERE t.deleted_at IS NULL
+     ORDER BY t.completed ASC, t.created_at DESC`
+  );
+  
+  return rows.map(row => ({
+    id: row.id,
+    title: row.title,
+    notes: row.notes,
+    due_date: row.due_date,
+    completed: row.completed === 1,
+    completed_at: row.completed_at,
+    calm_priority: row.calm_priority,
+    list_id: row.list_id,
+    parent_task_id: row.parent_task_id,
+    snoozed_until: row.snoozed_until,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    deleted_at: row.deleted_at,
+    list_name: row.list_name,
+  }));
 }

@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import DatePickerButton from '../components/DatePickerButton';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,6 +11,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  RefreshControl,
 } from 'react-native';
 import { getAllLists, createList, deleteList } from '../db/operations';
 import { getTasksByListId, createTask, deleteTask, updateTask } from '../db/operations';
@@ -28,6 +30,15 @@ export default function ListsScreen() {
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [taskModalVisible, setTaskModalVisible] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskDueDate, setNewTaskDueDate] = useState<number | undefined>(undefined);
+
+  // Inline editing state
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [editingTaskTitle, setEditingTaskTitle] = useState('');
+  const editInputRef = useRef<TextInput>(null);
+
+  // Refreshing state
+const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     loadLists();
@@ -113,6 +124,7 @@ export default function ListsScreen() {
   const handleBackToLists = () => {
     setSelectedList(null);
     setTasks([]);
+    setEditingTaskId(null);
   };
 
   // ========== TASKS OPERATIONS ==========
@@ -130,36 +142,50 @@ export default function ListsScreen() {
     }
   };
 
-  const handleCreateTask = async () => {
-    const trimmedTitle = newTaskTitle.trim();
+const handleRefreshTasks = async () => {
+  if (!selectedList) return;
+  
+  setRefreshing(true);
+  await loadTasks(selectedList.id);
+  setRefreshing(false);
+};
 
-    if (!trimmedTitle) {
-      Alert.alert('Error', 'Task title cannot be empty');
-      return;
-    }
+const handleCreateTask = async () => {
+  const trimmedTitle = newTaskTitle.trim();
 
-    if (!selectedList) {
-      Alert.alert('Error', 'No list selected');
-      return;
-    }
+  if (!trimmedTitle) {
+    Alert.alert('Error', 'Task title cannot be empty');
+    return;
+  }
 
-    try {
-      await createTask({
-        title: trimmedTitle,
-        list_id: selectedList.id,
-        completed: false,
-      });
+  if (!selectedList) {
+    Alert.alert('Error', 'No list selected');
+    return;
+  }
 
-      setNewTaskTitle('');
-      setTaskModalVisible(false);
-      await loadTasks(selectedList.id);
-    } catch (error) {
-      console.error('Failed to create task:', error);
-      Alert.alert('Error', 'Failed to create task');
-    }
-  };
+  try {
+    await createTask({
+      title: trimmedTitle,
+      list_id: selectedList.id,
+      due_date: newTaskDueDate,
+    });
+
+    setNewTaskTitle('');
+    setNewTaskDueDate(undefined);
+    setTaskModalVisible(false);
+    await loadTasks(selectedList.id);
+  } catch (error) {
+    console.error('Failed to create task:', error);
+    Alert.alert('Error', 'Failed to create task');
+  }
+};
 
   const handleToggleTask = async (task: Task) => {
+    // Prevent toggle while editing
+    if (editingTaskId === task.id) {
+      return;
+    }
+
     try {
       await updateTask({
         id: task.id,
@@ -200,6 +226,55 @@ export default function ListsScreen() {
     );
   };
 
+  // ========== INLINE EDITING ==========
+
+  const handleStartEditTask = (task: Task) => {
+    setEditingTaskId(task.id);
+    setEditingTaskTitle(task.title);
+    // Focus happens via autoFocus prop on TextInput
+  };
+
+const handleSaveEditTask = async (taskId: string) => {
+  const trimmedTitle = editingTaskTitle.trim();
+
+  if (!trimmedTitle) {
+    Alert.alert('Error', 'Task title cannot be empty', [
+      {
+        text: 'OK',
+        onPress: () => {
+          // Re-focus the input after alert dismissal
+          setTimeout(() => {
+            editInputRef.current?.focus();
+          }, 100);
+        },
+      },
+    ]);
+    return;
+  }
+
+  try {
+    await updateTask({
+      id: taskId,
+      title: trimmedTitle,
+    });
+
+    setEditingTaskId(null);
+    setEditingTaskTitle('');
+
+    if (selectedList) {
+      await loadTasks(selectedList.id);
+    }
+  } catch (error) {
+    console.error('Failed to update task:', error);
+    Alert.alert('Error', 'Failed to update task');
+  }
+};
+
+  const handleCancelEditTask = () => {
+    setEditingTaskId(null);
+    setEditingTaskTitle('');
+  };
+
   // ========== RENDER: LISTS OVERVIEW ==========
 
   const renderList = ({ item }: { item: List }) => (
@@ -222,35 +297,98 @@ export default function ListsScreen() {
   const renderEmptyLists = () => (
     <View style={styles.emptyContainer}>
       <Text style={styles.emptyText}>No lists yet</Text>
-      <Text style={styles.emptySubtext}>Tap + to create your first list</Text>
+      <Text style={styles.emptySubtext}>
+        Lists help you organize related tasks.{'\n'}
+        Create a list like "Groceries" or "Work" to get started.
+      </Text>
     </View>
   );
 
   // ========== RENDER: LIST DETAIL WITH TASKS ==========
 
-  const renderTask = ({ item }: { item: Task }) => (
-    <TouchableOpacity
-      style={styles.taskRow}
-      onPress={() => handleToggleTask(item)}
-      onLongPress={() => handleDeleteTask(item)}
-      activeOpacity={0.7}
-    >
-      <View style={[styles.checkbox, item.completed && styles.checkboxChecked]}>
+const renderTask = ({ item }: { item: Task }) => {
+  const isEditing = editingTaskId === item.id;
+
+const handleDateChange = async (timestamp: number | null) => {
+  try {
+    await updateTask({
+      id: item.id,
+      // IMPORTANT: allow NULL to pass through so date can be removed
+      due_date: timestamp,
+    });
+
+    if (selectedList) {
+      await loadTasks(selectedList.id);
+    }
+  } catch (error) {
+    console.error('Failed to update due date:', error);
+    Alert.alert('Error', 'Failed to update due date');
+  }
+};
+
+
+  return (
+    <View style={styles.taskRow}>
+      {/* Checkbox */}
+      <TouchableOpacity
+        style={[styles.checkbox, item.completed && styles.checkboxChecked]}
+        onPress={() => {
+          if (!isEditing) {
+            handleToggleTask(item);
+          }
+        }}
+        activeOpacity={0.7}
+      >
         {item.completed && <Text style={styles.checkmark}>✓</Text>}
-      </View>
+      </TouchableOpacity>
+
+      {/* Task content - editable or static */}
       <View style={styles.taskContent}>
-        <Text style={[styles.taskTitle, item.completed && styles.taskTitleCompleted]}>
-          {item.title}
-        </Text>
-        {item.notes && <Text style={styles.taskNotes}>{item.notes}</Text>}
+        {isEditing ? (
+          <TextInput
+            ref={editInputRef}
+            style={styles.taskEditInput}
+            value={editingTaskTitle}
+            onChangeText={setEditingTaskTitle}
+            onBlur={() => handleSaveEditTask(item.id)}
+            onSubmitEditing={() => handleSaveEditTask(item.id)}
+            autoFocus
+            returnKeyType="done"
+          />
+        ) : (
+          <TouchableOpacity
+            onPress={() => handleStartEditTask(item)}
+            onLongPress={() => handleDeleteTask(item)}
+            activeOpacity={0.7}
+            delayLongPress={500}
+          >
+            <Text style={[styles.taskTitle, item.completed && styles.taskTitleCompleted]}>
+              {item.title}
+            </Text>
+            {item.notes && <Text style={styles.taskNotes}>{item.notes}</Text>}
+          </TouchableOpacity>
+        )}
+
+        {/* Date picker - disabled while editing title */}
+        {!item.completed && (
+          <DatePickerButton
+            value={item.due_date}
+            onChange={handleDateChange}
+            disabled={isEditing}
+          />
+        )}
       </View>
-    </TouchableOpacity>
+    </View>
   );
+};
 
   const renderEmptyTasks = () => (
     <View style={styles.emptyContainer}>
       <Text style={styles.emptyText}>No tasks yet</Text>
-      <Text style={styles.emptySubtext}>Tap + to add a task</Text>
+      <Text style={styles.emptySubtext}>
+        Tasks are things you need to do.{'\n'}
+        Add items like "Buy milk" or "Call dentist" to this list.
+      </Text>
     </View>
   );
 
@@ -283,6 +421,14 @@ export default function ListsScreen() {
           keyExtractor={item => item.id}
           contentContainerStyle={styles.taskList}
           ListEmptyComponent={renderEmptyTasks}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefreshTasks}
+              tintColor="#3b82f6"
+              colors={['#3b82f6']}
+            />
+          }
         />
       )}
 
@@ -340,6 +486,11 @@ export default function ListsScreen() {
                     onSubmitEditing={handleCreateTask}
                   />
 
+  <DatePickerButton
+    value={newTaskDueDate}
+    onChange={(timestamp) => setNewTaskDueDate(timestamp ?? undefined)}
+  />
+
                   <View style={styles.modalButtons}>
                     <TouchableOpacity
                       style={[styles.button, styles.buttonCancel]}
@@ -353,9 +504,14 @@ export default function ListsScreen() {
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                      style={[styles.button, styles.buttonCreate]}
+                      style={[
+                        styles.button,
+                        styles.buttonCreate,
+                        !newTaskTitle.trim() && styles.buttonDisabled,
+                      ]}
                       onPress={handleCreateTask}
                       activeOpacity={0.7}
+                      disabled={!newTaskTitle.trim()}
                     >
                       <Text style={styles.buttonCreateText}>Create</Text>
                     </TouchableOpacity>
@@ -445,9 +601,14 @@ export default function ListsScreen() {
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.button, styles.buttonCreate]}
+                    style={[
+                      styles.button,
+                      styles.buttonCreate,
+                      !newListName.trim() && styles.buttonDisabled,
+                    ]}
                     onPress={handleCreateList}
                     activeOpacity={0.7}
+                    disabled={!newListName.trim()}
                   >
                     <Text style={styles.buttonCreateText}>Create</Text>
                   </TouchableOpacity>
@@ -607,22 +768,34 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6b7280',
   },
+  taskEditInput: {
+    fontSize: 16,
+    color: '#1a1a1a',
+    borderWidth: 1,
+    borderColor: '#3b82f6',
+    borderRadius: 6,
+    padding: 8,
+    backgroundColor: '#fff',
+  },
 
   // ========== EMPTY STATES ==========
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 80,
+    paddingHorizontal: 32,
   },
   emptyText: {
     fontSize: 18,
     color: '#9ca3af',
     fontWeight: '600',
-    marginBottom: 8,
+    marginBottom: 12,
   },
   emptySubtext: {
     fontSize: 14,
     color: '#9ca3af',
+    textAlign: 'center',
+    lineHeight: 20,
   },
 
   // ========== FAB ==========
@@ -707,5 +880,8 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  buttonDisabled: {
+    opacity: 0.4,
   },
 });

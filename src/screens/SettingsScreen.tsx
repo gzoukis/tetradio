@@ -14,3 +14,34 @@ const styles = StyleSheet.create({
   title: { fontSize: 24, fontWeight: 'bold' },
   subtitle: { marginTop: 8, color: '#666' },
 });
+
+const handleCleanupOrphanedTasks = async () => {
+  Alert.alert(
+    'Clean Up Orphaned Tasks',
+    'This will delete tasks from lists that no longer exist. Continue?',
+    [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Clean Up',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            const db = await getDatabase();
+            await db.runAsync(
+              `UPDATE tasks
+               SET deleted_at = datetime('now'), updated_at = datetime('now')
+               WHERE list_id IN (
+                 SELECT id FROM lists WHERE is_archived = 1
+               )
+               AND deleted_at IS NULL`
+            );
+            Alert.alert('Success', 'Orphaned tasks cleaned up');
+          } catch (error) {
+            console.error('Cleanup failed:', error);
+            Alert.alert('Error', 'Failed to clean up tasks');
+          }
+        },
+      },
+    ]
+  );
+};
