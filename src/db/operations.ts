@@ -8,11 +8,14 @@ export interface TaskWithListName extends Task {
 
 /**
  * Get all tasks for a specific list
+ * Returns tasks sorted by: completed status → priority → created date
  */
 export async function getTasksByListId(listId: string): Promise<Task[]> {
   const db = await getDatabase();
   const rows = await db.getAllAsync<any>(
-    'SELECT * FROM tasks WHERE list_id = ? AND deleted_at IS NULL ORDER BY created_at DESC',
+    `SELECT * FROM tasks 
+     WHERE list_id = ? AND deleted_at IS NULL 
+     ORDER BY completed ASC, calm_priority ASC, created_at DESC`,
     [listId]
   );
   
@@ -125,7 +128,8 @@ export async function deleteList(listId: string): Promise<void> {
 export async function createTask(input: {
   title: string;
   list_id: string;
-  due_date?: number; // NEW: Optional due date
+  due_date?: number;
+  calm_priority?: number; // ADDED: Optional priority (defaults to 2)
 }): Promise<void> {
   const db = await getDatabase();
 
@@ -135,27 +139,30 @@ export async function createTask(input: {
       title,
       list_id,
       due_date,
+      calm_priority,
       completed,
       created_at,
       updated_at
-    ) VALUES (?, ?, ?, ?, 0, datetime('now'), datetime('now'))`,
+    ) VALUES (?, ?, ?, ?, ?, 0, datetime('now'), datetime('now'))`,
     [
       Crypto.randomUUID(),
       input.title,
       input.list_id,
       input.due_date ?? null,
+      input.calm_priority ?? 2, // DEFAULT TO 2 (Normal)
     ]
   );
 }
 
 /**
- * Update task (supports completion toggle, title edit, and due date)
+ * Update task (supports completion toggle, title edit, due date, and priority)
  */
 export async function updateTask(input: {
   id: string;
   completed?: boolean;
   title?: string;
-  due_date?: number | null; // NEW: Optional due date (null = remove)
+  due_date?: number | null;
+  calm_priority?: number; // ADDED: Optional priority update
 }): Promise<void> {
   const db = await getDatabase();
 
@@ -184,6 +191,12 @@ export async function updateTask(input: {
     values.push(input.due_date);
   }
 
+  // ADDED: Priority update
+  if (input.calm_priority !== undefined) {
+    updates.push('calm_priority = ?');
+    values.push(input.calm_priority);
+  }
+
   // Always update the updated_at timestamp
   updates.push("updated_at = datetime('now')");
 
@@ -210,13 +223,6 @@ export async function deleteTask(taskId: string): Promise<void> {
      WHERE id = ?`,
     [taskId]
   );
-}
-
-/**
- * Task with list name (for cross-list views)
- */
-export interface TaskWithListName extends Task {
-  list_name?: string;
 }
 
 /**

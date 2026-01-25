@@ -1,5 +1,5 @@
 /**
- * Formatting utilities for dates, relative dates, and currency
+ * Formatting utilities for dates, relative dates, currency, and priority
  * No side effects, no dependencies on React or Expo
  */
 
@@ -64,4 +64,44 @@ export function isToday(timestamp?: number): boolean {
 export function isPastDate(timestamp?: number): boolean {
   if (!timestamp) return false;
   return timestamp < Date.now();
+}
+
+/**
+ * Get user-friendly priority label
+ */
+export function getPriorityLabel(priority?: number): string {
+  switch (priority) {
+    case 1:
+      return 'Focus';
+    case 3:
+      return 'Low key';
+    case 2:
+    default:
+      return 'Normal';
+  }
+}
+
+/**
+ * Get priority style object for visual indicators
+ * Returns left border width and color
+ */
+export function getPriorityStyle(priority?: number): {
+  borderLeftWidth: number;
+  borderLeftColor: string;
+} {
+  const p = priority ?? 2;
+  
+  if (p === 1) {
+    // Focus - blue left border
+    return {
+      borderLeftWidth: 4,
+      borderLeftColor: '#3b82f6',
+    };
+  }
+  
+  // Normal and Low key - no border
+  return {
+    borderLeftWidth: 0,
+    borderLeftColor: 'transparent',
+  };
 }

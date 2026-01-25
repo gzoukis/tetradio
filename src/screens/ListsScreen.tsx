@@ -12,10 +12,12 @@ import {
   KeyboardAvoidingView,
   Platform,
   RefreshControl,
+  ActionSheetIOS,
 } from 'react-native';
 import { getAllLists, createList, deleteList } from '../db/operations';
 import { getTasksByListId, createTask, deleteTask, updateTask } from '../db/operations';
 import type { List, Task } from '../types/models';
+import { getPriorityLabel, getPriorityStyle } from '../utils/formatting';
 
 export default function ListsScreen() {
   // Lists state
@@ -31,6 +33,7 @@ export default function ListsScreen() {
   const [taskModalVisible, setTaskModalVisible] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskDueDate, setNewTaskDueDate] = useState<number | undefined>(undefined);
+  const [newTaskPriority, setNewTaskPriority] = useState<number>(2); // Default: Normal
 
   // Inline editing state
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -38,7 +41,7 @@ export default function ListsScreen() {
   const editInputRef = useRef<TextInput>(null);
 
   // Refreshing state
-const [refreshing, setRefreshing] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     loadLists();
@@ -142,43 +145,45 @@ const [refreshing, setRefreshing] = useState(false);
     }
   };
 
-const handleRefreshTasks = async () => {
-  if (!selectedList) return;
-  
-  setRefreshing(true);
-  await loadTasks(selectedList.id);
-  setRefreshing(false);
-};
-
-const handleCreateTask = async () => {
-  const trimmedTitle = newTaskTitle.trim();
-
-  if (!trimmedTitle) {
-    Alert.alert('Error', 'Task title cannot be empty');
-    return;
-  }
-
-  if (!selectedList) {
-    Alert.alert('Error', 'No list selected');
-    return;
-  }
-
-  try {
-    await createTask({
-      title: trimmedTitle,
-      list_id: selectedList.id,
-      due_date: newTaskDueDate,
-    });
-
-    setNewTaskTitle('');
-    setNewTaskDueDate(undefined);
-    setTaskModalVisible(false);
+  const handleRefreshTasks = async () => {
+    if (!selectedList) return;
+    
+    setRefreshing(true);
     await loadTasks(selectedList.id);
-  } catch (error) {
-    console.error('Failed to create task:', error);
-    Alert.alert('Error', 'Failed to create task');
-  }
-};
+    setRefreshing(false);
+  };
+
+  const handleCreateTask = async () => {
+    const trimmedTitle = newTaskTitle.trim();
+
+    if (!trimmedTitle) {
+      Alert.alert('Error', 'Task title cannot be empty');
+      return;
+    }
+
+    if (!selectedList) {
+      Alert.alert('Error', 'No list selected');
+      return;
+    }
+
+    try {
+      await createTask({
+        title: trimmedTitle,
+        list_id: selectedList.id,
+        due_date: newTaskDueDate,
+        calm_priority: newTaskPriority,
+      });
+
+      setNewTaskTitle('');
+      setNewTaskDueDate(undefined);
+      setNewTaskPriority(2); // Reset to Normal
+      setTaskModalVisible(false);
+      await loadTasks(selectedList.id);
+    } catch (error) {
+      console.error('Failed to create task:', error);
+      Alert.alert('Error', 'Failed to create task');
+    }
+  };
 
   const handleToggleTask = async (task: Task) => {
     // Prevent toggle while editing
@@ -201,7 +206,129 @@ const handleCreateTask = async () => {
     }
   };
 
+const handleTaskLongPress = (task: Task) => {
+  if (Platform.OS === 'ios') {
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        options: ['Cancel', 'Change Priority', 'Delete Task'],
+        destructiveButtonIndex: 2,
+        cancelButtonIndex: 0,
+      },
+      (buttonIndex) => {
+        if (buttonIndex === 1) {
+          // Change Priority
+          ActionSheetIOS.showActionSheetWithOptions(
+            {
+              options: ['Cancel', 'Focus', 'Normal', 'Low key'],
+              cancelButtonIndex: 0,
+            },
+            (priorityIndex) => {
+              if (priorityIndex === 1) handleSetPriority(task, 1);
+              else if (priorityIndex === 2) handleSetPriority(task, 2);
+              else if (priorityIndex === 3) handleSetPriority(task, 3);
+            }
+          );
+        } else if (buttonIndex === 2) {
+          // Delete
+          Alert.alert(
+            'Delete Task',
+            `Delete "${task.title}"?`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Delete',
+                style: 'destructive',
+                onPress: async () => {
+                  try {
+                    await deleteTask(task.id);
+                    if (selectedList) {
+                      await loadTasks(selectedList.id);
+                    }
+                  } catch (error) {
+                    console.error('Failed to delete task:', error);
+                    Alert.alert('Error', 'Failed to delete task');
+                  }
+                },
+              },
+            ]
+          );
+        }
+      }
+    );
+} else {
+  // Android - buttons appear in REVERSE order
+  Alert.alert(
+    task.title,
+    'What would you like to do?',
+    [
+      { text: 'Cancel', style: 'cancel' },
+      { 
+        text: 'Delete Task', 
+        onPress: () => {
+          Alert.alert(
+            'Delete Task',
+            `Delete "${task.title}"?`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Delete',
+                style: 'destructive',
+                onPress: async () => {
+                  try {
+                    await deleteTask(task.id);
+                    if (selectedList) {
+                      await loadTasks(selectedList.id);
+                    }
+                  } catch (error) {
+                    console.error('Failed to delete task:', error);
+                    Alert.alert('Error', 'Failed to delete task');
+                  }
+                },
+              },
+            ]
+          );
+        },
+        style: 'destructive'
+      },
+      { 
+        text: 'Change Priority', 
+        onPress: () => {
+          Alert.alert(
+            'Set Priority',
+            'Choose priority level',
+            [
+              { text: '🔵 Focus', onPress: () => handleSetPriority(task, 1) },
+              { text: '⚪ Normal', onPress: () => handleSetPriority(task, 2) },
+              { text: '⚫ Low key', onPress: () => handleSetPriority(task, 3) },
+            ],
+            { cancelable: true }
+          );
+        }
+      },
+    ],
+    { cancelable: true }
+  );
+}
+};
+
+  const handleSetPriority = async (task: Task, priority: number) => {
+    try {
+      await updateTask({
+        id: task.id,
+        calm_priority: priority,
+      });
+      if (selectedList) {
+        await loadTasks(selectedList.id);
+      }
+    } catch (error) {
+      console.error('Failed to update priority:', error);
+      Alert.alert('Error', 'Failed to update priority');
+    }
+  };
+
   const handleDeleteTask = (task: Task) => {
+    // This function is now only called from outside long-press menu
+    // The long-press menu has its own inline delete confirmation
     Alert.alert(
       'Delete Task',
       `Delete "${task.title}"?`,
@@ -231,44 +358,42 @@ const handleCreateTask = async () => {
   const handleStartEditTask = (task: Task) => {
     setEditingTaskId(task.id);
     setEditingTaskTitle(task.title);
-    // Focus happens via autoFocus prop on TextInput
   };
 
-const handleSaveEditTask = async (taskId: string) => {
-  const trimmedTitle = editingTaskTitle.trim();
+  const handleSaveEditTask = async (taskId: string) => {
+    const trimmedTitle = editingTaskTitle.trim();
 
-  if (!trimmedTitle) {
-    Alert.alert('Error', 'Task title cannot be empty', [
-      {
-        text: 'OK',
-        onPress: () => {
-          // Re-focus the input after alert dismissal
-          setTimeout(() => {
-            editInputRef.current?.focus();
-          }, 100);
+    if (!trimmedTitle) {
+      Alert.alert('Error', 'Task title cannot be empty', [
+        {
+          text: 'OK',
+          onPress: () => {
+            setTimeout(() => {
+              editInputRef.current?.focus();
+            }, 100);
+          },
         },
-      },
-    ]);
-    return;
-  }
-
-  try {
-    await updateTask({
-      id: taskId,
-      title: trimmedTitle,
-    });
-
-    setEditingTaskId(null);
-    setEditingTaskTitle('');
-
-    if (selectedList) {
-      await loadTasks(selectedList.id);
+      ]);
+      return;
     }
-  } catch (error) {
-    console.error('Failed to update task:', error);
-    Alert.alert('Error', 'Failed to update task');
-  }
-};
+
+    try {
+      await updateTask({
+        id: taskId,
+        title: trimmedTitle,
+      });
+
+      setEditingTaskId(null);
+      setEditingTaskTitle('');
+
+      if (selectedList) {
+        await loadTasks(selectedList.id);
+      }
+    } catch (error) {
+      console.error('Failed to update task:', error);
+      Alert.alert('Error', 'Failed to update task');
+    }
+  };
 
   const handleCancelEditTask = () => {
     setEditingTaskId(null);
@@ -306,81 +431,80 @@ const handleSaveEditTask = async (taskId: string) => {
 
   // ========== RENDER: LIST DETAIL WITH TASKS ==========
 
-const renderTask = ({ item }: { item: Task }) => {
-  const isEditing = editingTaskId === item.id;
+  const renderTask = ({ item }: { item: Task }) => {
+    const isEditing = editingTaskId === item.id;
+    const priorityStyle = !item.completed ? getPriorityStyle(item.calm_priority) : {};
 
-const handleDateChange = async (timestamp: number | null) => {
-  try {
-    await updateTask({
-      id: item.id,
-      // IMPORTANT: allow NULL to pass through so date can be removed
-      due_date: timestamp,
-    });
+    const handleDateChange = async (timestamp: number | null) => {
+      try {
+        await updateTask({
+          id: item.id,
+          due_date: timestamp,
+        });
 
-    if (selectedList) {
-      await loadTasks(selectedList.id);
-    }
-  } catch (error) {
-    console.error('Failed to update due date:', error);
-    Alert.alert('Error', 'Failed to update due date');
-  }
-};
+        if (selectedList) {
+          await loadTasks(selectedList.id);
+        }
+      } catch (error) {
+        console.error('Failed to update due date:', error);
+        Alert.alert('Error', 'Failed to update due date');
+      }
+    };
 
+    return (
+      <View style={[styles.taskRow, priorityStyle]}>
+        {/* Checkbox */}
+        <TouchableOpacity
+          style={[styles.checkbox, item.completed && styles.checkboxChecked]}
+          onPress={() => {
+            if (!isEditing) {
+              handleToggleTask(item);
+            }
+          }}
+          activeOpacity={0.7}
+        >
+          {item.completed && <Text style={styles.checkmark}>✓</Text>}
+        </TouchableOpacity>
 
-  return (
-    <View style={styles.taskRow}>
-      {/* Checkbox */}
-      <TouchableOpacity
-        style={[styles.checkbox, item.completed && styles.checkboxChecked]}
-        onPress={() => {
-          if (!isEditing) {
-            handleToggleTask(item);
-          }
-        }}
-        activeOpacity={0.7}
-      >
-        {item.completed && <Text style={styles.checkmark}>✓</Text>}
-      </TouchableOpacity>
+        {/* Task content - editable or static */}
+        <View style={styles.taskContent}>
+          {isEditing ? (
+            <TextInput
+              ref={editInputRef}
+              style={styles.taskEditInput}
+              value={editingTaskTitle}
+              onChangeText={setEditingTaskTitle}
+              onBlur={() => handleSaveEditTask(item.id)}
+              onSubmitEditing={() => handleSaveEditTask(item.id)}
+              autoFocus
+              returnKeyType="done"
+            />
+          ) : (
+            <TouchableOpacity
+              onPress={() => handleStartEditTask(item)}
+              onLongPress={() => handleTaskLongPress(item)}
+              activeOpacity={0.7}
+              delayLongPress={500}
+            >
+              <Text style={[styles.taskTitle, item.completed && styles.taskTitleCompleted]}>
+                {item.title}
+              </Text>
+              {item.notes && <Text style={styles.taskNotes}>{item.notes}</Text>}
+            </TouchableOpacity>
+          )}
 
-      {/* Task content - editable or static */}
-      <View style={styles.taskContent}>
-        {isEditing ? (
-          <TextInput
-            ref={editInputRef}
-            style={styles.taskEditInput}
-            value={editingTaskTitle}
-            onChangeText={setEditingTaskTitle}
-            onBlur={() => handleSaveEditTask(item.id)}
-            onSubmitEditing={() => handleSaveEditTask(item.id)}
-            autoFocus
-            returnKeyType="done"
-          />
-        ) : (
-          <TouchableOpacity
-            onPress={() => handleStartEditTask(item)}
-            onLongPress={() => handleDeleteTask(item)}
-            activeOpacity={0.7}
-            delayLongPress={500}
-          >
-            <Text style={[styles.taskTitle, item.completed && styles.taskTitleCompleted]}>
-              {item.title}
-            </Text>
-            {item.notes && <Text style={styles.taskNotes}>{item.notes}</Text>}
-          </TouchableOpacity>
-        )}
-
-        {/* Date picker - disabled while editing title */}
-        {!item.completed && (
-          <DatePickerButton
-            value={item.due_date}
-            onChange={handleDateChange}
-            disabled={isEditing}
-          />
-        )}
+          {/* Date picker - disabled while editing title */}
+          {!item.completed && (
+            <DatePickerButton
+              value={item.due_date}
+              onChange={handleDateChange}
+              disabled={isEditing}
+            />
+          )}
+        </View>
       </View>
-    </View>
-  );
-};
+    );
+  };
 
   const renderEmptyTasks = () => (
     <View style={styles.emptyContainer}>
@@ -467,6 +591,7 @@ const handleDateChange = async (timestamp: number | null) => {
               onPress={() => {
                 setTaskModalVisible(false);
                 setNewTaskTitle('');
+                setNewTaskPriority(2);
               }}
             >
               <TouchableOpacity
@@ -486,10 +611,36 @@ const handleDateChange = async (timestamp: number | null) => {
                     onSubmitEditing={handleCreateTask}
                   />
 
-  <DatePickerButton
-    value={newTaskDueDate}
-    onChange={(timestamp) => setNewTaskDueDate(timestamp ?? undefined)}
-  />
+                  <DatePickerButton
+                    value={newTaskDueDate}
+                    onChange={(timestamp) => setNewTaskDueDate(timestamp ?? undefined)}
+                  />
+
+                  {/* Priority Picker */}
+                  <View style={styles.priorityContainer}>
+                    <Text style={styles.priorityLabel}>Priority</Text>
+                    <View style={styles.priorityButtons}>
+                      {[1, 2, 3].map((priority) => (
+                        <TouchableOpacity
+                          key={priority}
+                          style={[
+                            styles.priorityButton,
+                            newTaskPriority === priority && styles.priorityButtonActive,
+                          ]}
+                          onPress={() => setNewTaskPriority(priority)}
+                        >
+                          <Text
+                            style={[
+                              styles.priorityButtonText,
+                              newTaskPriority === priority && styles.priorityButtonTextActive,
+                            ]}
+                          >
+                            {getPriorityLabel(priority)}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
 
                   <View style={styles.modalButtons}>
                     <TouchableOpacity
@@ -497,6 +648,7 @@ const handleDateChange = async (timestamp: number | null) => {
                       onPress={() => {
                         setTaskModalVisible(false);
                         setNewTaskTitle('');
+                        setNewTaskPriority(2);
                       }}
                       activeOpacity={0.7}
                     >
@@ -796,6 +948,38 @@ const styles = StyleSheet.create({
     color: '#9ca3af',
     textAlign: 'center',
     lineHeight: 20,
+  },
+
+  // ========== PRIORITY PICKER ==========
+  priorityContainer: {
+    marginBottom: 16,
+  },
+  priorityLabel: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginBottom: 8,
+  },
+  priorityButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  priorityButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: '#f3f4f6',
+    alignItems: 'center',
+  },
+  priorityButtonActive: {
+    backgroundColor: '#3b82f6',
+  },
+  priorityButtonText: {
+    fontSize: 14,
+    color: '#6b7280',
+    fontWeight: '600',
+  },
+  priorityButtonTextActive: {
+    color: '#fff',
   },
 
   // ========== FAB ==========

@@ -45,13 +45,31 @@ export function classifyTask(task: Task): TaskTimeCategory {
   const now = Date.now();
   const startOfToday = getStartOfToday();
   const endOfToday = getEndOfToday();
+  const taskHasTime = hasTimeComponent(task.due_date);
 
-  // Overdue: due date is before today
+  // If task has a specific time, check if that time has passed
+  if (taskHasTime) {
+    // Overdue: specific time has passed
+    if (task.due_date < now) {
+      return 'overdue';
+    }
+
+    // Today: time is later today
+    if (task.due_date >= now && task.due_date <= endOfToday) {
+      return 'today';
+    }
+
+    // Upcoming: time is in the future (tomorrow or later)
+    return 'upcoming';
+  }
+
+  // Date-only tasks (no specific time)
+  // Overdue: due date is before today (any time yesterday or earlier counts as overdue)
   if (task.due_date < startOfToday) {
     return 'overdue';
   }
 
-  // Today: due date is within today
+  // Today: due date is within today (entire day is valid)
   if (task.due_date >= startOfToday && task.due_date <= endOfToday) {
     return 'today';
   }
@@ -62,11 +80,17 @@ export function classifyTask(task: Task): TaskTimeCategory {
 
 /**
  * Compare tasks for ordering within a time category
- * Tasks with time come first, ordered by time
- * Date-only tasks come after, ordered by date
+ * Order: timed before date-only → priority (1,2,3) → timestamp
  */
 export function compareTasksByTime(a: Task, b: Task): number {
-  if (!a.due_date && !b.due_date) return 0;
+  // Handle no-date tasks
+  if (!a.due_date && !b.due_date) {
+    // Both have no date - sort by priority then created_at
+    const aPriority = a.calm_priority ?? 2;
+    const bPriority = b.calm_priority ?? 2;
+    if (aPriority !== bPriority) return aPriority - bPriority;
+    return a.created_at - b.created_at;
+  }
   if (!a.due_date) return 1;
   if (!b.due_date) return -1;
 
@@ -77,7 +101,15 @@ export function compareTasksByTime(a: Task, b: Task): number {
   if (aHasTime && !bHasTime) return -1;
   if (!aHasTime && bHasTime) return 1;
 
-  // Both have time or both don't have time - sort by timestamp
+  // Both have time or both don't have time
+  // Sort by priority first (1 before 2 before 3)
+  const aPriority = a.calm_priority ?? 2;
+  const bPriority = b.calm_priority ?? 2;
+  if (aPriority !== bPriority) {
+    return aPriority - bPriority;
+  }
+
+  // Same priority - sort by timestamp
   return a.due_date - b.due_date;
 }
 
@@ -106,10 +138,11 @@ export function groupTasksByTime(tasks: Task[]): GroupedTasks {
     grouped[category].push(task);
   });
 
-  // Sort each category: timed tasks first, then date-only
+  // Sort each category: timed tasks first, then by priority, then by timestamp
   grouped.overdue.sort(compareTasksByTime);
   grouped.today.sort(compareTasksByTime);
   grouped.upcoming.sort(compareTasksByTime);
+  grouped.no_date.sort(compareTasksByTime);
 
   return grouped;
 }
