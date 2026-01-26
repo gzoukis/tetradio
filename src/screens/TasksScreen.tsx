@@ -62,7 +62,7 @@ export default function TasksScreen({ goToLists }: { goToLists: () => void }) {
 
       setSections(newSections);
     } catch (error) {
-      Alert.alert('Error', 'Failed to load tasks');
+      Alert.alert('Error', 'Unable to load items. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -79,103 +79,93 @@ export default function TasksScreen({ goToLists }: { goToLists: () => void }) {
     await loadTasks();
   };
 
-const handleTaskLongPress = (task: TaskWithListName) => {
-  if (Platform.OS === 'ios') {
-    ActionSheetIOS.showActionSheetWithOptions(
-      {
-        options: ['Cancel', 'Change Priority', 'Delete Task'],
-        destructiveButtonIndex: 2,
-        cancelButtonIndex: 0,
-      },
-      (buttonIndex) => {
-        if (buttonIndex === 1) {
-          // Change Priority
-          ActionSheetIOS.showActionSheetWithOptions(
-            {
-              options: ['Cancel', 'Focus', 'Normal', 'Low key'],
-              cancelButtonIndex: 0,
-            },
-            (priorityIndex) => {
-              if (priorityIndex === 1) handleSetPriority(task, 1);
-              else if (priorityIndex === 2) handleSetPriority(task, 2);
-              else if (priorityIndex === 3) handleSetPriority(task, 3);
-            }
-          );
-        } else if (buttonIndex === 2) {
-          // Delete
-          Alert.alert(
-            'Delete Task',
-            `Delete "${task.title}"?`,
-            [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Delete',
-                style: 'destructive',
-                onPress: async () => {
-                  await deleteTask(task.id);
-                  await loadTasks();
-                },
-              },
-            ]
-          );
-        }
-      }
-    );
-  } else {
-  // Android - buttons appear in REVERSE order
-  Alert.alert(
-    task.title,
-    'What would you like to do?',
-    [
-      { text: 'Cancel', style: 'cancel' },
-      { 
-        text: 'Delete Task', 
-        onPress: () => {
-          Alert.alert(
-            'Delete Task',
-            `Delete "${task.title}"?`,
-            [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Delete',
-                style: 'destructive',
-                onPress: async () => {
-                  try {
-                    await deleteTask(task.id);
-                    if (selectedList) {
-                      await loadTasks(selectedList.id);
-                    }
-                  } catch (error) {
-                    console.error('Failed to delete task:', error);
-                    Alert.alert('Error', 'Failed to delete task');
-                  }
-                },
-              },
-            ]
-          );
+  const handleTaskLongPress = (task: TaskWithListName) => {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ['Cancel', 'Change Priority', 'Delete Task'],
+          destructiveButtonIndex: 2,
+          cancelButtonIndex: 0,
         },
-        style: 'destructive'
-      },
-      { 
-        text: 'Change Priority', 
-        onPress: () => {
-          Alert.alert(
-            'Set Priority',
-            'Choose priority level',
-            [
-              { text: '🔵 Focus', onPress: () => handleSetPriority(task, 1) },
-              { text: '⚪ Normal', onPress: () => handleSetPriority(task, 2) },
-              { text: '⚫ Low key', onPress: () => handleSetPriority(task, 3) },
-            ],
-            { cancelable: true }
-          );
+        (buttonIndex) => {
+          if (buttonIndex === 1) {
+            ActionSheetIOS.showActionSheetWithOptions(
+              {
+                options: ['Cancel', 'Focus', 'Normal', 'Low key'],
+                cancelButtonIndex: 0,
+              },
+              (priorityIndex) => {
+                if (priorityIndex === 1) handleSetPriority(task, 1);
+                else if (priorityIndex === 2) handleSetPriority(task, 2);
+                else if (priorityIndex === 3) handleSetPriority(task, 3);
+              }
+            );
+          } else if (buttonIndex === 2) {
+            Alert.alert(
+              'Delete Task',
+              `Delete "${task.title}"?`,
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Delete',
+                  style: 'destructive',
+                  onPress: async () => {
+                    await deleteTask(task.id);
+                    await loadTasks();
+                  },
+                },
+              ]
+            );
+          }
         }
-      },
-    ],
-    { cancelable: true }
-  );
-}
-};
+      );
+    } else {
+      Alert.alert(
+        task.title,
+        'What would you like to do?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Delete Task', 
+            onPress: () => {
+              Alert.alert(
+                'Delete Task',
+                `Delete "${task.title}"?`,
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: async () => {
+                      await deleteTask(task.id);
+                      await loadTasks();
+                    },
+                  },
+                ]
+              );
+            },
+            style: 'destructive'
+          },
+          { 
+            text: 'Change Priority', 
+            onPress: () => {
+              Alert.alert(
+                'Set Priority',
+                'Choose priority level',
+                [
+                  { text: '🔵 Focus', onPress: () => handleSetPriority(task, 1) },
+                  { text: '⚪ Normal', onPress: () => handleSetPriority(task, 2) },
+                  { text: '⚫ Low key', onPress: () => handleSetPriority(task, 3) },
+                ],
+                { cancelable: true }
+              );
+            }
+          },
+        ],
+        { cancelable: true }
+      );
+    }
+  };
 
   const handleSetPriority = async (task: TaskWithListName, priority: number) => {
     try {
@@ -186,13 +176,11 @@ const handleTaskLongPress = (task: TaskWithListName) => {
       await loadTasks();
     } catch (error) {
       console.error('Failed to update priority:', error);
-      Alert.alert('Error', 'Failed to update priority');
+      Alert.alert('Error', 'Unable to update priority. Please try again.');
     }
   };
 
   const handleDeleteTask = (task: TaskWithListName) => {
-    // This function is now only called from outside long-press menu
-    // The long-press menu has its own inline delete confirmation
     Alert.alert('Delete Task', `Delete "${task.title}"?`, [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -284,14 +272,14 @@ const handleTaskLongPress = (task: TaskWithListName) => {
     if (sectionTitle === 'UPCOMING') {
       return (
         <View style={styles.sectionEmptyContainer}>
-          <Text style={styles.sectionEmptyText}>No upcoming tasks</Text>
+          <Text style={styles.sectionEmptyText}>No upcoming items</Text>
         </View>
       );
     }
     if (sectionTitle.startsWith('COMPLETED')) {
       return (
         <View style={styles.sectionEmptyContainer}>
-          <Text style={styles.sectionEmptyText}>No completed tasks yet</Text>
+          <Text style={styles.sectionEmptyText}>Nothing completed yet</Text>
         </View>
       );
     }
@@ -301,7 +289,7 @@ const handleTaskLongPress = (task: TaskWithListName) => {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <Text>Loading tasks…</Text>
+        <Text style={styles.loadingText}>Loading…</Text>
       </View>
     );
   }
@@ -309,9 +297,9 @@ const handleTaskLongPress = (task: TaskWithListName) => {
   if (!sections.length) {
     return (
       <View style={styles.emptyContainer}>
-        <Text style={styles.emptyTitle}>No tasks yet</Text>
+        <Text style={styles.emptyTitle}>Nothing here yet</Text>
         <Text style={styles.emptyText}>
-          Tasks are created inside lists.
+          Create a list and add items to get started.
         </Text>
 
         <TouchableOpacity onPress={goToLists} style={styles.goToListsButton}>
@@ -361,6 +349,7 @@ const handleTaskLongPress = (task: TaskWithListName) => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f9fafb' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { fontSize: 16, color: '#666' },
   taskList: { padding: 16, paddingBottom: 100 },
   sectionHeader: {
     flexDirection: 'row',

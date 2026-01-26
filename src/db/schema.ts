@@ -1,5 +1,11 @@
 /**
- * SQLite schema definitions for Tetradio v1
+ * SQLite schema definitions for Tetradio
+ * 
+ * VERSION 2 CHANGES (Ticket 8A - Entry Architecture Foundation):
+ * - Renamed tasks → entries
+ * - Added type column (TEXT NOT NULL DEFAULT 'task')
+ * - All existing tasks now have type='task'
+ * - Foundation for future entry types (note, checklist, record)
  * 
  * Design Principles:
  * - Local-first: All data stored on device
@@ -10,15 +16,18 @@
  * - No AI fields in main schema (separate intelligence tables for future)
  */
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /**
- * Tasks Table
- * Core task/todo functionality
+ * Entries Table (formerly Tasks)
+ * Supports multiple entry types: task, note, checklist, record
+ * 
+ * VERSION 2: Added type column, renamed from tasks
  */
-export const CREATE_TASKS_TABLE = `
-  CREATE TABLE IF NOT EXISTS tasks (
+export const CREATE_ENTRIES_TABLE = `
+  CREATE TABLE IF NOT EXISTS entries (
     id TEXT PRIMARY KEY NOT NULL,
+    type TEXT NOT NULL DEFAULT 'task',
     title TEXT NOT NULL,
     notes TEXT,
     due_date INTEGER,
@@ -32,14 +41,15 @@ export const CREATE_TASKS_TABLE = `
     updated_at INTEGER NOT NULL,
     deleted_at INTEGER,
     FOREIGN KEY (list_id) REFERENCES lists(id) ON DELETE SET NULL,
-    FOREIGN KEY (parent_task_id) REFERENCES tasks(id) ON DELETE SET NULL
+    FOREIGN KEY (parent_task_id) REFERENCES entries(id) ON DELETE SET NULL
   );
 `;
 
-export const CREATE_TASKS_INDEXES = `
-  CREATE INDEX IF NOT EXISTS idx_tasks_list ON tasks(list_id) WHERE deleted_at IS NULL;
-  CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date) WHERE deleted_at IS NULL AND completed = 0;
-  CREATE INDEX IF NOT EXISTS idx_tasks_completed ON tasks(completed, completed_at) WHERE deleted_at IS NULL;
+export const CREATE_ENTRIES_INDEXES = `
+  CREATE INDEX IF NOT EXISTS idx_entries_list ON entries(list_id) WHERE deleted_at IS NULL;
+  CREATE INDEX IF NOT EXISTS idx_entries_type ON entries(type) WHERE deleted_at IS NULL;
+  CREATE INDEX IF NOT EXISTS idx_entries_due_date ON entries(due_date) WHERE deleted_at IS NULL AND completed = 0;
+  CREATE INDEX IF NOT EXISTS idx_entries_completed ON entries(completed, completed_at) WHERE deleted_at IS NULL;
 `;
 
 /**
@@ -106,7 +116,7 @@ export const CREATE_REMINDERS_TABLE = `
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     deleted_at INTEGER,
-    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL
+    FOREIGN KEY (task_id) REFERENCES entries(id) ON DELETE SET NULL
   );
 `;
 
@@ -175,8 +185,8 @@ export const CREATE_EXPENSES_INDEXES = `
  * Run all CREATE TABLE and CREATE INDEX statements
  */
 export const INIT_SCHEMA = [
-  CREATE_TASKS_TABLE,
-  CREATE_TASKS_INDEXES,
+  CREATE_ENTRIES_TABLE,
+  CREATE_ENTRIES_INDEXES,
   CREATE_LISTS_TABLE,
   CREATE_LISTS_INDEXES,
   CREATE_LIST_ITEMS_TABLE,
@@ -188,3 +198,15 @@ export const INIT_SCHEMA = [
   CREATE_EXPENSES_TABLE,
   CREATE_EXPENSES_INDEXES,
 ];
+
+/**
+ * Migration from Schema Version 1 to Version 2
+ * Tasks → Entries with type column
+ */
+export const MIGRATE_V1_TO_V2 = `
+  -- Add type column to existing tasks table
+  ALTER TABLE tasks ADD COLUMN type TEXT NOT NULL DEFAULT 'task';
+  
+  -- Rename tasks table to entries
+  ALTER TABLE tasks RENAME TO entries;
+`;

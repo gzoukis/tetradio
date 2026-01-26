@@ -33,7 +33,7 @@ export default function ListsScreen() {
   const [taskModalVisible, setTaskModalVisible] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskDueDate, setNewTaskDueDate] = useState<number | undefined>(undefined);
-  const [newTaskPriority, setNewTaskPriority] = useState<number>(2); // Default: Normal
+  const [newTaskPriority, setNewTaskPriority] = useState<number>(2);
 
   // Inline editing state
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -63,7 +63,7 @@ export default function ListsScreen() {
       setLists(activeLists);
     } catch (error) {
       console.error('Failed to load lists:', error);
-      Alert.alert('Error', 'Failed to load lists');
+      Alert.alert('Error', 'Unable to load lists. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -73,7 +73,7 @@ export default function ListsScreen() {
     const trimmedName = newListName.trim();
 
     if (!trimmedName) {
-      Alert.alert('Error', 'List name cannot be empty');
+      Alert.alert('Empty Name', 'Please enter a name for your list.');
       return;
     }
 
@@ -90,7 +90,7 @@ export default function ListsScreen() {
       await loadLists();
     } catch (error) {
       console.error('Failed to create list:', error);
-      Alert.alert('Error', 'Failed to create list');
+      Alert.alert('Error', 'Unable to create list. Please try again.');
     }
   };
 
@@ -112,7 +112,7 @@ export default function ListsScreen() {
               await loadLists();
             } catch (error) {
               console.error('Failed to delete list:', error);
-              Alert.alert('Error', 'Failed to delete list');
+              Alert.alert('Error', 'Unable to delete list. Please try again.');
             }
           },
         },
@@ -139,7 +139,7 @@ export default function ListsScreen() {
       setTasks(listTasks);
     } catch (error) {
       console.error('Failed to load tasks:', error);
-      Alert.alert('Error', 'Failed to load tasks');
+      Alert.alert('Error', 'Unable to load items. Please try again.');
     } finally {
       setLoadingTasks(false);
     }
@@ -157,12 +157,12 @@ export default function ListsScreen() {
     const trimmedTitle = newTaskTitle.trim();
 
     if (!trimmedTitle) {
-      Alert.alert('Error', 'Task title cannot be empty');
+      Alert.alert('Empty Title', 'Please enter a title for your task.');
       return;
     }
 
     if (!selectedList) {
-      Alert.alert('Error', 'No list selected');
+      Alert.alert('Error', 'No list selected.');
       return;
     }
 
@@ -176,17 +176,16 @@ export default function ListsScreen() {
 
       setNewTaskTitle('');
       setNewTaskDueDate(undefined);
-      setNewTaskPriority(2); // Reset to Normal
+      setNewTaskPriority(2);
       setTaskModalVisible(false);
       await loadTasks(selectedList.id);
     } catch (error) {
       console.error('Failed to create task:', error);
-      Alert.alert('Error', 'Failed to create task');
+      Alert.alert('Error', 'Unable to add task. Please try again.');
     }
   };
 
   const handleToggleTask = async (task: Task) => {
-    // Prevent toggle while editing
     if (editingTaskId === task.id) {
       return;
     }
@@ -202,114 +201,111 @@ export default function ListsScreen() {
       }
     } catch (error) {
       console.error('Failed to toggle task:', error);
-      Alert.alert('Error', 'Failed to update task');
+      Alert.alert('Error', 'Unable to update task. Please try again.');
     }
   };
 
-const handleTaskLongPress = (task: Task) => {
-  if (Platform.OS === 'ios') {
-    ActionSheetIOS.showActionSheetWithOptions(
-      {
-        options: ['Cancel', 'Change Priority', 'Delete Task'],
-        destructiveButtonIndex: 2,
-        cancelButtonIndex: 0,
-      },
-      (buttonIndex) => {
-        if (buttonIndex === 1) {
-          // Change Priority
-          ActionSheetIOS.showActionSheetWithOptions(
-            {
-              options: ['Cancel', 'Focus', 'Normal', 'Low key'],
-              cancelButtonIndex: 0,
-            },
-            (priorityIndex) => {
-              if (priorityIndex === 1) handleSetPriority(task, 1);
-              else if (priorityIndex === 2) handleSetPriority(task, 2);
-              else if (priorityIndex === 3) handleSetPriority(task, 3);
-            }
-          );
-        } else if (buttonIndex === 2) {
-          // Delete
-          Alert.alert(
-            'Delete Task',
-            `Delete "${task.title}"?`,
-            [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Delete',
-                style: 'destructive',
-                onPress: async () => {
-                  try {
-                    await deleteTask(task.id);
-                    if (selectedList) {
-                      await loadTasks(selectedList.id);
-                    }
-                  } catch (error) {
-                    console.error('Failed to delete task:', error);
-                    Alert.alert('Error', 'Failed to delete task');
-                  }
-                },
-              },
-            ]
-          );
-        }
-      }
-    );
-} else {
-  // Android - buttons appear in REVERSE order
-  Alert.alert(
-    task.title,
-    'What would you like to do?',
-    [
-      { text: 'Cancel', style: 'cancel' },
-      { 
-        text: 'Delete Task', 
-        onPress: () => {
-          Alert.alert(
-            'Delete Task',
-            `Delete "${task.title}"?`,
-            [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Delete',
-                style: 'destructive',
-                onPress: async () => {
-                  try {
-                    await deleteTask(task.id);
-                    if (selectedList) {
-                      await loadTasks(selectedList.id);
-                    }
-                  } catch (error) {
-                    console.error('Failed to delete task:', error);
-                    Alert.alert('Error', 'Failed to delete task');
-                  }
-                },
-              },
-            ]
-          );
+  const handleTaskLongPress = (task: Task) => {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ['Cancel', 'Change Priority', 'Delete Task'],
+          destructiveButtonIndex: 2,
+          cancelButtonIndex: 0,
         },
-        style: 'destructive'
-      },
-      { 
-        text: 'Change Priority', 
-        onPress: () => {
-          Alert.alert(
-            'Set Priority',
-            'Choose priority level',
-            [
-              { text: '🔵 Focus', onPress: () => handleSetPriority(task, 1) },
-              { text: '⚪ Normal', onPress: () => handleSetPriority(task, 2) },
-              { text: '⚫ Low key', onPress: () => handleSetPriority(task, 3) },
-            ],
-            { cancelable: true }
-          );
+        (buttonIndex) => {
+          if (buttonIndex === 1) {
+            ActionSheetIOS.showActionSheetWithOptions(
+              {
+                options: ['Cancel', 'Focus', 'Normal', 'Low key'],
+                cancelButtonIndex: 0,
+              },
+              (priorityIndex) => {
+                if (priorityIndex === 1) handleSetPriority(task, 1);
+                else if (priorityIndex === 2) handleSetPriority(task, 2);
+                else if (priorityIndex === 3) handleSetPriority(task, 3);
+              }
+            );
+          } else if (buttonIndex === 2) {
+            Alert.alert(
+              'Delete Task',
+              `Delete "${task.title}"?`,
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Delete',
+                  style: 'destructive',
+                  onPress: async () => {
+                    try {
+                      await deleteTask(task.id);
+                      if (selectedList) {
+                        await loadTasks(selectedList.id);
+                      }
+                    } catch (error) {
+                      console.error('Failed to delete task:', error);
+                      Alert.alert('Error', 'Unable to delete task. Please try again.');
+                    }
+                  },
+                },
+              ]
+            );
+          }
         }
-      },
-    ],
-    { cancelable: true }
-  );
-}
-};
+      );
+    } else {
+      Alert.alert(
+        task.title,
+        'What would you like to do?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Delete Task', 
+            onPress: () => {
+              Alert.alert(
+                'Delete Task',
+                `Delete "${task.title}"?`,
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: async () => {
+                      try {
+                        await deleteTask(task.id);
+                        if (selectedList) {
+                          await loadTasks(selectedList.id);
+                        }
+                      } catch (error) {
+                        console.error('Failed to delete task:', error);
+                        Alert.alert('Error', 'Unable to delete task. Please try again.');
+                      }
+                    },
+                  },
+                ]
+              );
+            },
+            style: 'destructive'
+          },
+          { 
+            text: 'Change Priority', 
+            onPress: () => {
+              Alert.alert(
+                'Set Priority',
+                'Choose priority level',
+                [
+                  { text: '🔵 Focus', onPress: () => handleSetPriority(task, 1) },
+                  { text: '⚪ Normal', onPress: () => handleSetPriority(task, 2) },
+                  { text: '⚫ Low key', onPress: () => handleSetPriority(task, 3) },
+                ],
+                { cancelable: true }
+              );
+            }
+          },
+        ],
+        { cancelable: true }
+      );
+    }
+  };
 
   const handleSetPriority = async (task: Task, priority: number) => {
     try {
@@ -322,35 +318,8 @@ const handleTaskLongPress = (task: Task) => {
       }
     } catch (error) {
       console.error('Failed to update priority:', error);
-      Alert.alert('Error', 'Failed to update priority');
+      Alert.alert('Error', 'Unable to update priority. Please try again.');
     }
-  };
-
-  const handleDeleteTask = (task: Task) => {
-    // This function is now only called from outside long-press menu
-    // The long-press menu has its own inline delete confirmation
-    Alert.alert(
-      'Delete Task',
-      `Delete "${task.title}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteTask(task.id);
-              if (selectedList) {
-                await loadTasks(selectedList.id);
-              }
-            } catch (error) {
-              console.error('Failed to delete task:', error);
-              Alert.alert('Error', 'Failed to delete task');
-            }
-          },
-        },
-      ]
-    );
   };
 
   // ========== INLINE EDITING ==========
@@ -364,7 +333,7 @@ const handleTaskLongPress = (task: Task) => {
     const trimmedTitle = editingTaskTitle.trim();
 
     if (!trimmedTitle) {
-      Alert.alert('Error', 'Task title cannot be empty', [
+      Alert.alert('Empty Title', 'Please enter a title for your task.', [
         {
           text: 'OK',
           onPress: () => {
@@ -391,7 +360,7 @@ const handleTaskLongPress = (task: Task) => {
       }
     } catch (error) {
       console.error('Failed to update task:', error);
-      Alert.alert('Error', 'Failed to update task');
+      Alert.alert('Error', 'Unable to save changes. Please try again.');
     }
   };
 
@@ -414,7 +383,7 @@ const handleTaskLongPress = (task: Task) => {
       </View>
       <View style={styles.listContent}>
         <Text style={styles.listName}>{item.name}</Text>
-        <Text style={styles.listSubtext}>Tap to view • Long-press to delete</Text>
+        <Text style={styles.listSubtext}>Tap to open • Long-press to delete</Text>
       </View>
     </TouchableOpacity>
   );
@@ -423,7 +392,7 @@ const handleTaskLongPress = (task: Task) => {
     <View style={styles.emptyContainer}>
       <Text style={styles.emptyText}>No lists yet</Text>
       <Text style={styles.emptySubtext}>
-        Lists help you organize related tasks.{'\n'}
+        Lists help you organize related items.{'\n'}
         Create a list like "Groceries" or "Work" to get started.
       </Text>
     </View>
@@ -447,13 +416,12 @@ const handleTaskLongPress = (task: Task) => {
         }
       } catch (error) {
         console.error('Failed to update due date:', error);
-        Alert.alert('Error', 'Failed to update due date');
+        Alert.alert('Error', 'Unable to update date. Please try again.');
       }
     };
 
     return (
       <View style={[styles.taskRow, priorityStyle]}>
-        {/* Checkbox */}
         <TouchableOpacity
           style={[styles.checkbox, item.completed && styles.checkboxChecked]}
           onPress={() => {
@@ -466,7 +434,6 @@ const handleTaskLongPress = (task: Task) => {
           {item.completed && <Text style={styles.checkmark}>✓</Text>}
         </TouchableOpacity>
 
-        {/* Task content - editable or static */}
         <View style={styles.taskContent}>
           {isEditing ? (
             <TextInput
@@ -493,7 +460,6 @@ const handleTaskLongPress = (task: Task) => {
             </TouchableOpacity>
           )}
 
-          {/* Date picker - disabled while editing title */}
           {!item.completed && (
             <DatePickerButton
               value={item.due_date}
@@ -508,17 +474,16 @@ const handleTaskLongPress = (task: Task) => {
 
   const renderEmptyTasks = () => (
     <View style={styles.emptyContainer}>
-      <Text style={styles.emptyText}>No tasks yet</Text>
+      <Text style={styles.emptyText}>Nothing here yet</Text>
       <Text style={styles.emptySubtext}>
-        Tasks are things you need to do.{'\n'}
-        Add items like "Buy milk" or "Call dentist" to this list.
+        Add items you need to do or remember.{'\n'}
+        Like "Buy milk" or "Call dentist"
       </Text>
     </View>
   );
 
   const renderListDetail = () => (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.detailHeader}>
         <TouchableOpacity
           style={styles.backButton}
@@ -533,10 +498,9 @@ const handleTaskLongPress = (task: Task) => {
         </View>
       </View>
 
-      {/* Tasks */}
       {loadingTasks ? (
         <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Loading tasks...</Text>
+          <Text style={styles.loadingText}>Loading…</Text>
         </View>
       ) : (
         <FlatList
@@ -556,7 +520,6 @@ const handleTaskLongPress = (task: Task) => {
         />
       )}
 
-      {/* FAB for adding tasks */}
       <TouchableOpacity
         style={styles.fab}
         onPress={() => setTaskModalVisible(true)}
@@ -574,7 +537,6 @@ const handleTaskLongPress = (task: Task) => {
       <>
         {renderListDetail()}
 
-        {/* Task Creation Modal */}
         <Modal
           visible={taskModalVisible}
           animationType="slide"
@@ -599,7 +561,7 @@ const handleTaskLongPress = (task: Task) => {
                 onPress={e => e.stopPropagation()}
               >
                 <View style={styles.modalContent}>
-                  <Text style={styles.modalTitle}>New Task</Text>
+                  <Text style={styles.modalTitle}>Add Task</Text>
 
                   <TextInput
                     style={styles.input}
@@ -616,7 +578,6 @@ const handleTaskLongPress = (task: Task) => {
                     onChange={(timestamp) => setNewTaskDueDate(timestamp ?? undefined)}
                   />
 
-                  {/* Priority Picker */}
                   <View style={styles.priorityContainer}>
                     <Text style={styles.priorityLabel}>Priority</Text>
                     <View style={styles.priorityButtons}>
@@ -665,7 +626,7 @@ const handleTaskLongPress = (task: Task) => {
                       activeOpacity={0.7}
                       disabled={!newTaskTitle.trim()}
                     >
-                      <Text style={styles.buttonCreateText}>Create</Text>
+                      <Text style={styles.buttonCreateText}>Add</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -677,12 +638,11 @@ const handleTaskLongPress = (task: Task) => {
     );
   }
 
-  // Lists overview (default view)
   return (
     <View style={styles.container}>
       {loading ? (
         <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Loading lists...</Text>
+          <Text style={styles.loadingText}>Loading…</Text>
         </View>
       ) : (
         <>
@@ -704,7 +664,6 @@ const handleTaskLongPress = (task: Task) => {
         </>
       )}
 
-      {/* List Creation Modal */}
       <Modal
         visible={modalVisible}
         animationType="slide"
@@ -728,7 +687,7 @@ const handleTaskLongPress = (task: Task) => {
               onPress={e => e.stopPropagation()}
             >
               <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>New List</Text>
+                <Text style={styles.modalTitle}>Create List</Text>
 
                 <TextInput
                   style={styles.input}
@@ -775,25 +734,10 @@ const handleTaskLongPress = (task: Task) => {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f9fafb',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    fontSize: 16,
-    color: '#666',
-  },
-
-  // ========== LISTS OVERVIEW ==========
-  listContainer: {
-    padding: 16,
-    paddingBottom: 100,
-  },
+  container: { flex: 1, backgroundColor: '#f9fafb' },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { fontSize: 16, color: '#666' },
+  listContainer: { padding: 16, paddingBottom: 100 },
   listRow: {
     backgroundColor: '#fff',
     borderRadius: 12,
@@ -817,24 +761,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 16,
   },
-  listIconText: {
-    fontSize: 24,
-  },
-  listContent: {
-    flex: 1,
-  },
-  listName: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1a1a1a',
-    marginBottom: 4,
-  },
-  listSubtext: {
-    fontSize: 14,
-    color: '#9ca3af',
-  },
-
-  // ========== LIST DETAIL HEADER ==========
+  listIconText: { fontSize: 24 },
+  listContent: { flex: 1 },
+  listName: { fontSize: 18, fontWeight: '600', color: '#1a1a1a', marginBottom: 4 },
+  listSubtext: { fontSize: 14, color: '#9ca3af' },
   detailHeader: {
     backgroundColor: '#fff',
     paddingVertical: 12,
@@ -842,34 +772,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#e5e7eb',
   },
-  backButton: {
-    paddingVertical: 8,
-    marginBottom: 8,
-  },
-  backButtonText: {
-    fontSize: 16,
-    color: '#3b82f6',
-    fontWeight: '600',
-  },
-  detailHeaderContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  detailHeaderIcon: {
-    fontSize: 32,
-    marginRight: 12,
-  },
-  detailHeaderTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
-  },
-
-  // ========== TASKS ==========
-  taskList: {
-    padding: 16,
-    paddingBottom: 100,
-  },
+  backButton: { paddingVertical: 8, marginBottom: 8 },
+  backButtonText: { fontSize: 16, color: '#3b82f6', fontWeight: '600' },
+  detailHeaderContent: { flexDirection: 'row', alignItems: 'center' },
+  detailHeaderIcon: { fontSize: 32, marginRight: 12 },
+  detailHeaderTitle: { fontSize: 24, fontWeight: 'bold', color: '#1a1a1a' },
+  taskList: { padding: 16, paddingBottom: 100 },
   taskRow: {
     backgroundColor: '#fff',
     borderRadius: 12,
@@ -895,31 +803,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 2,
   },
-  checkboxChecked: {
-    backgroundColor: '#3b82f6',
-    borderColor: '#3b82f6',
-  },
-  checkmark: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  taskContent: {
-    flex: 1,
-  },
-  taskTitle: {
-    fontSize: 16,
-    color: '#1a1a1a',
-    marginBottom: 4,
-  },
-  taskTitleCompleted: {
-    textDecorationLine: 'line-through',
-    color: '#9ca3af',
-  },
-  taskNotes: {
-    fontSize: 14,
-    color: '#6b7280',
-  },
+  checkboxChecked: { backgroundColor: '#3b82f6', borderColor: '#3b82f6' },
+  checkmark: { color: '#fff', fontSize: 14, fontWeight: 'bold' },
+  taskContent: { flex: 1 },
+  taskTitle: { fontSize: 16, color: '#1a1a1a', marginBottom: 4 },
+  taskTitleCompleted: { textDecorationLine: 'line-through', color: '#9ca3af' },
+  taskNotes: { fontSize: 14, color: '#6b7280' },
   taskEditInput: {
     fontSize: 16,
     color: '#1a1a1a',
@@ -929,40 +818,17 @@ const styles = StyleSheet.create({
     padding: 8,
     backgroundColor: '#fff',
   },
-
-  // ========== EMPTY STATES ==========
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 80,
     paddingHorizontal: 32,
   },
-  emptyText: {
-    fontSize: 18,
-    color: '#9ca3af',
-    fontWeight: '600',
-    marginBottom: 12,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#9ca3af',
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-
-  // ========== PRIORITY PICKER ==========
-  priorityContainer: {
-    marginBottom: 16,
-  },
-  priorityLabel: {
-    fontSize: 14,
-    color: '#6b7280',
-    marginBottom: 8,
-  },
-  priorityButtons: {
-    flexDirection: 'row',
-    gap: 8,
-  },
+  emptyText: { fontSize: 18, color: '#9ca3af', fontWeight: '600', marginBottom: 12 },
+  emptySubtext: { fontSize: 14, color: '#9ca3af', textAlign: 'center', lineHeight: 20 },
+  priorityContainer: { marginBottom: 16 },
+  priorityLabel: { fontSize: 14, color: '#6b7280', marginBottom: 8 },
+  priorityButtons: { flexDirection: 'row', gap: 8 },
   priorityButton: {
     flex: 1,
     paddingVertical: 10,
@@ -970,19 +836,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#f3f4f6',
     alignItems: 'center',
   },
-  priorityButtonActive: {
-    backgroundColor: '#3b82f6',
-  },
-  priorityButtonText: {
-    fontSize: 14,
-    color: '#6b7280',
-    fontWeight: '600',
-  },
-  priorityButtonTextActive: {
-    color: '#fff',
-  },
-
-  // ========== FAB ==========
+  priorityButtonActive: { backgroundColor: '#3b82f6' },
+  priorityButtonText: { fontSize: 14, color: '#6b7280', fontWeight: '600' },
+  priorityButtonTextActive: { color: '#fff' },
   fab: {
     position: 'absolute',
     right: 20,
@@ -999,16 +855,8 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 6,
   },
-  fabText: {
-    fontSize: 32,
-    color: '#fff',
-    fontWeight: '300',
-  },
-
-  // ========== MODALS ==========
-  modalContainer: {
-    flex: 1,
-  },
+  fabText: { fontSize: 32, color: '#fff', fontWeight: '300' },
+  modalContainer: { flex: 1 },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -1021,12 +869,7 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 40,
   },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
-    marginBottom: 16,
-  },
+  modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#1a1a1a', marginBottom: 16 },
   input: {
     borderWidth: 1,
     borderColor: '#d1d5db',
@@ -1037,10 +880,7 @@ const styles = StyleSheet.create({
     minHeight: 48,
     backgroundColor: '#fff',
   },
-  modalButtons: {
-    flexDirection: 'row',
-    gap: 12,
-  },
+  modalButtons: { flexDirection: 'row', gap: 12 },
   button: {
     flex: 1,
     paddingVertical: 14,
@@ -1049,23 +889,9 @@ const styles = StyleSheet.create({
     minHeight: 48,
     justifyContent: 'center',
   },
-  buttonCancel: {
-    backgroundColor: '#f3f4f6',
-  },
-  buttonCancelText: {
-    color: '#6b7280',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  buttonCreate: {
-    backgroundColor: '#3b82f6',
-  },
-  buttonCreateText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  buttonDisabled: {
-    opacity: 0.4,
-  },
+  buttonCancel: { backgroundColor: '#f3f4f6' },
+  buttonCancelText: { color: '#6b7280', fontSize: 16, fontWeight: '600' },
+  buttonCreate: { backgroundColor: '#3b82f6' },
+  buttonCreateText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  buttonDisabled: { opacity: 0.4 },
 });

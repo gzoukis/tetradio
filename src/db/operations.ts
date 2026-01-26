@@ -9,18 +9,21 @@ export interface TaskWithListName extends Task {
 /**
  * Get all tasks for a specific list
  * Returns tasks sorted by: completed status → priority → created date
+ * 
+ * VERSION 2: Updated to query entries table with type filter
  */
 export async function getTasksByListId(listId: string): Promise<Task[]> {
   const db = await getDatabase();
   const rows = await db.getAllAsync<any>(
-    `SELECT * FROM tasks 
-     WHERE list_id = ? AND deleted_at IS NULL 
+    `SELECT * FROM entries 
+     WHERE list_id = ? AND type = 'task' AND deleted_at IS NULL 
      ORDER BY completed ASC, calm_priority ASC, created_at DESC`,
     [listId]
   );
   
   return rows.map(row => ({
     id: row.id,
+    type: 'task' as const,
     title: row.title,
     notes: row.notes,
     due_date: row.due_date,
@@ -91,6 +94,8 @@ export async function createList(input: {
 
 /**
  * Soft-delete a list and all its tasks
+ * 
+ * VERSION 2: Updated to reference entries table
  */
 export async function deleteList(listId: string): Promise<void> {
   const db = await getDatabase();
@@ -109,9 +114,9 @@ export async function deleteList(listId: string): Promise<void> {
 
     // Soft-delete all tasks in this list
     await db.runAsync(
-      `UPDATE tasks
+      `UPDATE entries
        SET deleted_at = datetime('now'), updated_at = datetime('now')
-       WHERE list_id = ? AND deleted_at IS NULL`,
+       WHERE list_id = ? AND type = 'task' AND deleted_at IS NULL`,
       [listId]
     );
 
@@ -124,18 +129,21 @@ export async function deleteList(listId: string): Promise<void> {
 
 /**
  * Create a new task
+ * 
+ * VERSION 2: Updated to insert into entries table with type='task'
  */
 export async function createTask(input: {
   title: string;
   list_id: string;
   due_date?: number;
-  calm_priority?: number; // ADDED: Optional priority (defaults to 2)
+  calm_priority?: number;
 }): Promise<void> {
   const db = await getDatabase();
 
   await db.runAsync(
-    `INSERT INTO tasks (
+    `INSERT INTO entries (
       id,
+      type,
       title,
       list_id,
       due_date,
@@ -143,26 +151,28 @@ export async function createTask(input: {
       completed,
       created_at,
       updated_at
-    ) VALUES (?, ?, ?, ?, ?, 0, datetime('now'), datetime('now'))`,
+    ) VALUES (?, 'task', ?, ?, ?, ?, 0, datetime('now'), datetime('now'))`,
     [
       Crypto.randomUUID(),
       input.title,
       input.list_id,
       input.due_date ?? null,
-      input.calm_priority ?? 2, // DEFAULT TO 2 (Normal)
+      input.calm_priority ?? 2,
     ]
   );
 }
 
 /**
  * Update task (supports completion toggle, title edit, due date, and priority)
+ * 
+ * VERSION 2: Updated to query entries table with type filter
  */
 export async function updateTask(input: {
   id: string;
   completed?: boolean;
   title?: string;
   due_date?: number | null;
-  calm_priority?: number; // ADDED: Optional priority update
+  calm_priority?: number;
 }): Promise<void> {
   const db = await getDatabase();
 
@@ -191,7 +201,6 @@ export async function updateTask(input: {
     values.push(input.due_date);
   }
 
-  // ADDED: Priority update
   if (input.calm_priority !== undefined) {
     updates.push('calm_priority = ?');
     values.push(input.calm_priority);
@@ -204,23 +213,25 @@ export async function updateTask(input: {
   values.push(input.id);
 
   await db.runAsync(
-    `UPDATE tasks
+    `UPDATE entries
      SET ${updates.join(', ')}
-     WHERE id = ?`,
+     WHERE id = ? AND type = 'task'`,
     values
   );
 }
 
 /**
  * Soft-delete a task
+ * 
+ * VERSION 2: Updated to reference entries table with type filter
  */
 export async function deleteTask(taskId: string): Promise<void> {
   const db = await getDatabase();
 
   await db.runAsync(
-    `UPDATE tasks
+    `UPDATE entries
      SET deleted_at = datetime('now'), updated_at = datetime('now')
-     WHERE id = ?`,
+     WHERE id = ? AND type = 'task'`,
     [taskId]
   );
 }
@@ -228,6 +239,8 @@ export async function deleteTask(taskId: string): Promise<void> {
 /**
  * Get all active tasks across all lists
  * Includes list name via JOIN
+ * 
+ * VERSION 2: Updated to query entries table with type filter
  */
 export async function getAllActiveTasks(): Promise<TaskWithListName[]> {
   const db = await getDatabase();
@@ -235,14 +248,15 @@ export async function getAllActiveTasks(): Promise<TaskWithListName[]> {
     `SELECT 
       t.*,
       l.name as list_name
-     FROM tasks t
+     FROM entries t
      LEFT JOIN lists l ON t.list_id = l.id
-     WHERE t.deleted_at IS NULL
+     WHERE t.type = 'task' AND t.deleted_at IS NULL
      ORDER BY t.completed ASC, t.created_at DESC`
   );
   
   return rows.map(row => ({
     id: row.id,
+    type: 'task' as const,
     title: row.title,
     notes: row.notes,
     due_date: row.due_date,
