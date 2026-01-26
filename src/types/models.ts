@@ -31,6 +31,24 @@ export type EntryType = 'task'; // | 'note' | 'checklist' | 'record';
  * All entry types share these fields
  * 
  * VERSION 2: Foundation for multi-type architecture
+ * 
+ * FIELD USAGE BY TYPE:
+ * - type, title, list_id, created_at, updated_at: ALL types
+ * - notes: ALL types (optional extended content)
+ * - deleted_at: ALL types (soft delete mechanism)
+ * 
+ * TYPE-SPECIFIC FIELDS:
+ * - completed, completed_at, due_date: task, checklist ONLY
+ * - calm_priority: task ONLY
+ * - parent_task_id: task ONLY (legacy subtask feature)
+ * - snoozed_until: task ONLY (legacy snooze feature)
+ * 
+ * LEGACY FIELDS (task-only, preserved from v1):
+ * - parent_task_id: Subtask hierarchy (POWER feature, inactive)
+ * - snoozed_until: Task snoozing (POWER feature, inactive)
+ * 
+ * These fields will remain NULL for all non-task entry types.
+ * No assumptions are made that other entry types will use them.
  */
 export interface Entry extends BaseModel {
   type: EntryType;
@@ -39,13 +57,15 @@ export interface Entry extends BaseModel {
   list_id?: string;
   
   // Type-specific fields (nullable for types that don't use them)
-  // Tasks only
+  // Tasks + Checklists
   due_date?: number;
   completed?: boolean;
   completed_at?: number;
+  
+  // Tasks only
   calm_priority?: 1 | 2 | 3;
-  parent_task_id?: string;
-  snoozed_until?: number;
+  parent_task_id?: string;      // LEGACY: Task-only subtask hierarchy
+  snoozed_until?: number;        // LEGACY: Task-only snooze feature
 }
 
 /**

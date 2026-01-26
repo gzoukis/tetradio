@@ -23,6 +23,22 @@ export const SCHEMA_VERSION = 2;
  * Supports multiple entry types: task, note, checklist, record
  * 
  * VERSION 2: Added type column, renamed from tasks
+ * 
+ * FIELD USAGE BY TYPE:
+ * - type: ALL (required discriminator)
+ * - title, notes, list_id: ALL (optional)
+ * - completed, completed_at, due_date: task, checklist ONLY
+ * - calm_priority: task ONLY
+ * - parent_task_id, snoozed_until: task ONLY (legacy fields, not used by other types)
+ * 
+ * LEGACY FIELDS (task-only, unchanged from v1):
+ * - parent_task_id: Subtask hierarchy (POWER feature, inactive in v1)
+ * - snoozed_until: Task snoozing (POWER feature, inactive in v1)
+ * 
+ * SOFT DELETES:
+ * - deleted_at IS NOT NULL marks soft-deleted entries
+ * - Soft-deleted rows preserved during migration
+ * - All queries filter WHERE deleted_at IS NULL
  */
 export const CREATE_ENTRIES_TABLE = `
   CREATE TABLE IF NOT EXISTS entries (
@@ -202,6 +218,19 @@ export const INIT_SCHEMA = [
 /**
  * Migration from Schema Version 1 to Version 2
  * Tasks → Entries with type column
+ * 
+ * CHANGES:
+ * 1. Adds type column (TEXT NOT NULL DEFAULT 'task')
+ * 2. Renames tasks table to entries
+ * 
+ * PRESERVES:
+ * - All existing data (including soft-deleted rows)
+ * - All existing columns unchanged (parent_task_id, snoozed_until remain)
+ * - All indexes recreated with new table name
+ * 
+ * VERIFICATION:
+ * - Row count before = row count after (includes soft-deleted)
+ * - All rows have type='task' after migration
  */
 export const MIGRATE_V1_TO_V2 = `
   -- Add type column to existing tasks table

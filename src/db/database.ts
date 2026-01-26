@@ -5,6 +5,10 @@ let dbInstance: SQLite.SQLiteDatabase | null = null;
 
 /**
  * Get current schema version from database
+ * 
+ * METADATA KEY: 'schema_version'
+ * STORAGE TYPE: TEXT (string)
+ * FORMAT: Integer as string (e.g., '1', '2', '3')
  */
 async function getCurrentVersion(db: SQLite.SQLiteDatabase): Promise<number> {
   try {
@@ -21,6 +25,9 @@ async function getCurrentVersion(db: SQLite.SQLiteDatabase): Promise<number> {
 
 /**
  * Update schema version in database
+ * 
+ * TIMING: Called ONLY after successful migration commit
+ * STORAGE: app_metadata table, key='schema_version', value as TEXT
  */
 async function updateVersion(db: SQLite.SQLiteDatabase, version: number): Promise<void> {
   await db.runAsync(
@@ -32,6 +39,13 @@ async function updateVersion(db: SQLite.SQLiteDatabase, version: number): Promis
 /**
  * Run migration from version 1 to version 2
  * Tasks → Entries with type column
+ * 
+ * SAFETY GUARANTEES:
+ * - Runs in transaction (automatic rollback on error)
+ * - Preserves ALL rows (active + soft-deleted)
+ * - Verifies row counts before/after
+ * - Verifies all rows have type='task'
+ * - Idempotent (safe to run multiple times)
  */
 async function migrateV1ToV2(db: SQLite.SQLiteDatabase): Promise<void> {
   console.log('Running migration: V1 → V2 (Tasks → Entries)');
@@ -45,22 +59,23 @@ async function migrateV1ToV2(db: SQLite.SQLiteDatabase): Promise<void> {
     );
     
     if (tableExists && tableExists.count > 0) {
-      // Get count before migration for verification
+      // Get count before migration (includes ALL rows: active + soft-deleted)
       const beforeCount = await db.getFirstAsync<{ count: number }>(
         'SELECT COUNT(*) as count FROM tasks'
       );
       console.log(`Tasks before migration: ${beforeCount?.count ?? 0}`);
       
-      // Run migration SQL
+      // Run migration SQL (add type column, rename table)
       await db.execAsync(MIGRATE_V1_TO_V2);
       
-      // Verify count after migration
+      // Verify count after migration (includes ALL rows: active + soft-deleted)
       const afterCount = await db.getFirstAsync<{ count: number }>(
         'SELECT COUNT(*) as count FROM entries WHERE type = ?',
         ['task']
       );
       console.log(`Entries after migration: ${afterCount?.count ?? 0}`);
       
+      // CRITICAL: Verify ALL rows migrated (including soft-deleted)
       if (beforeCount?.count !== afterCount?.count) {
         throw new Error('Migration verification failed: row count mismatch');
       }
