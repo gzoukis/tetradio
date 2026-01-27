@@ -21,10 +21,10 @@ export interface BaseModel {
 
 /**
  * Entry types supported by the system
- * VERSION 2: Only 'task' is active
- * Future: 'note', 'checklist', 'record'
+ * VERSION 2: 'task' and 'note' active
+ * Future: 'checklist', 'record'
  */
-export type EntryType = 'task'; // | 'note' | 'checklist' | 'record';
+export type EntryType = 'task' | 'note'; // | 'checklist' | 'record';
 
 /**
  * Entry base interface
@@ -83,6 +83,29 @@ export interface Task extends BaseModel {
   list_id?: string;
   parent_task_id?: string;
   snoozed_until?: number;
+}
+
+/**
+ * Note model (Entry with type='note')
+ * Simple text-based entry type
+ * 
+ * VERSION 2: First non-task entry type
+ * 
+ * USES:
+ * - id, type='note', title, notes (body text), list_id
+ * - created_at, updated_at, deleted_at
+ * 
+ * DOES NOT USE:
+ * - completed, completed_at (notes are not completable)
+ * - due_date (notes are not schedulable)
+ * - calm_priority (notes don't have urgency)
+ * - parent_task_id, snoozed_until (task-only legacy fields)
+ */
+export interface Note extends BaseModel {
+  type: 'note';
+  title: string;
+  notes?: string;  // Body text (optional)
+  list_id?: string;
 }
 
 /**
@@ -158,6 +181,7 @@ export interface Expense extends BaseModel {
  * Create payload types (omit auto-generated fields)
  */
 export type CreateTask = Omit<Task, 'id' | 'created_at' | 'updated_at' | 'deleted_at' | 'type'>;
+export type CreateNote = Omit<Note, 'id' | 'created_at' | 'updated_at' | 'deleted_at' | 'type'>;
 export type CreateList = Omit<List, 'id' | 'created_at' | 'updated_at' | 'deleted_at'>;
 export type CreateListItem = Omit<ListItem, 'id' | 'created_at' | 'deleted_at'>;
 export type CreateReminder = Omit<Reminder, 'id' | 'created_at' | 'updated_at' | 'deleted_at'>;
@@ -168,6 +192,7 @@ export type CreateExpense = Omit<Expense, 'id' | 'created_at' | 'updated_at' | '
  * Update payload types (all fields optional except id)
  */
 export type UpdateTask = Partial<Omit<Task, 'id' | 'created_at' | 'deleted_at' | 'type'>> & { id: string };
+export type UpdateNote = Partial<Omit<Note, 'id' | 'created_at' | 'deleted_at' | 'type'>> & { id: string };
 export type UpdateList = Partial<Omit<List, 'id' | 'created_at' | 'deleted_at'>> & { id: string };
 export type UpdateListItem = Partial<Omit<ListItem, 'id' | 'created_at' | 'deleted_at'>> & { id: string };
 export type UpdateReminder = Partial<Omit<Reminder, 'id' | 'created_at' | 'deleted_at'>> & { id: string };

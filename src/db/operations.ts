@@ -1,6 +1,6 @@
 import * as Crypto from 'expo-crypto';
 import { getDatabase } from './database';
-import type { Task, List } from '../types/models';
+import type { Task, List, Note, CreateNote, UpdateNote } from '../types/models';
 
 export interface TaskWithListName extends Task {
   list_name?: string;
@@ -270,5 +270,105 @@ export async function getAllActiveTasks(): Promise<TaskWithListName[]> {
     updated_at: row.updated_at,
     deleted_at: row.deleted_at,
     list_name: row.list_name,
+  }));
+}
+
+// ========== NOTE OPERATIONS ==========
+
+/**
+ * Create a new note
+ * 
+ * VERSION 2: First non-task entry type
+ */
+export async function createNote(input: CreateNote): Promise<void> {
+  const db = await getDatabase();
+
+  await db.runAsync(
+    `INSERT INTO entries (
+      id,
+      type,
+      title,
+      notes,
+      list_id,
+      created_at,
+      updated_at
+    ) VALUES (?, 'note', ?, ?, ?, datetime('now'), datetime('now'))`,
+    [
+      Crypto.randomUUID(),
+      input.title,
+      input.notes ?? null,
+      input.list_id ?? null,
+    ]
+  );
+}
+
+/**
+ * Update note (title and/or body)
+ */
+export async function updateNote(input: UpdateNote): Promise<void> {
+  const db = await getDatabase();
+
+  const updates: string[] = [];
+  const values: any[] = [];
+
+  if (input.title !== undefined) {
+    updates.push('title = ?');
+    values.push(input.title);
+  }
+
+  if (input.notes !== undefined) {
+    updates.push('notes = ?');
+    values.push(input.notes);
+  }
+
+  // Always update the updated_at timestamp
+  updates.push("updated_at = datetime('now')");
+
+  // Add the id at the end for WHERE clause
+  values.push(input.id);
+
+  await db.runAsync(
+    `UPDATE entries
+     SET ${updates.join(', ')}
+     WHERE id = ? AND type = 'note'`,
+    values
+  );
+}
+
+/**
+ * Soft-delete a note
+ */
+export async function deleteNote(noteId: string): Promise<void> {
+  const db = await getDatabase();
+
+  await db.runAsync(
+    `UPDATE entries
+     SET deleted_at = datetime('now'), updated_at = datetime('now')
+     WHERE id = ? AND type = 'note'`,
+    [noteId]
+  );
+}
+
+/**
+ * Get all notes for a specific list
+ */
+export async function getNotesByListId(listId: string): Promise<Note[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<any>(
+    `SELECT * FROM entries 
+     WHERE list_id = ? AND type = 'note' AND deleted_at IS NULL 
+     ORDER BY created_at DESC`,
+    [listId]
+  );
+  
+  return rows.map(row => ({
+    id: row.id,
+    type: 'note' as const,
+    title: row.title,
+    notes: row.notes,
+    list_id: row.list_id,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    deleted_at: row.deleted_at,
   }));
 }

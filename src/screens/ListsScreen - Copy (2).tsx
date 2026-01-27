@@ -21,18 +21,22 @@ import { getNotesByListId, createNote, deleteNote, updateNote } from '../db/oper
 import type { List, Task, Note } from '../types/models';
 import { getPriorityLabel, getPriorityStyle } from '../utils/formatting';
 
+// Union type for mixed list entries
 type ListEntry = Task | Note;
 
 export default function ListsScreen() {
+  // Lists state
   const [lists, setLists] = useState<List[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [newListName, setNewListName] = useState('');
 
+  // Selected list & entries state
   const [selectedList, setSelectedList] = useState<List | null>(null);
   const [entries, setEntries] = useState<ListEntry[]>([]);
   const [loadingEntries, setLoadingEntries] = useState(false);
   
+  // Entry creation state
   const [entryModalVisible, setEntryModalVisible] = useState(false);
   const [entryType, setEntryType] = useState<'task' | 'note'>('task');
   const [newEntryTitle, setNewEntryTitle] = useState('');
@@ -40,10 +44,12 @@ export default function ListsScreen() {
   const [newTaskDueDate, setNewTaskDueDate] = useState<number | undefined>(undefined);
   const [newTaskPriority, setNewTaskPriority] = useState<number>(2);
 
+  // Inline editing state
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [editingEntryTitle, setEditingEntryTitle] = useState('');
-  const entryEditInputRef = useRef<TextInput>(null);
+  const editInputRef = useRef<TextInput>(null);
 
+  // Refreshing state
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
@@ -55,6 +61,8 @@ export default function ListsScreen() {
       loadEntries(selectedList.id);
     }
   }, [selectedList]);
+
+  // ========== LISTS OPERATIONS ==========
 
   const loadLists = async () => {
     try {
@@ -122,8 +130,6 @@ export default function ListsScreen() {
   };
 
   const handleSelectList = (list: List) => {
-    setEditingEntryId(null);
-    setEditingEntryTitle('');
     setSelectedList(list);
   };
 
@@ -131,18 +137,21 @@ export default function ListsScreen() {
     setSelectedList(null);
     setEntries([]);
     setEditingEntryId(null);
-    setEditingEntryTitle('');
   };
+
+  // ========== ENTRIES OPERATIONS (MIXED: TASKS + NOTES) ==========
 
   const loadEntries = async (listId: string) => {
     try {
       setLoadingEntries(true);
       
+      // Load both tasks and notes
       const [tasks, notes] = await Promise.all([
         getTasksByListId(listId),
         getNotesByListId(listId),
       ]);
 
+      // Merge and sort by created_at DESC (newest first)
       const mixed: ListEntry[] = [...tasks, ...notes].sort(
         (a, b) => b.created_at - a.created_at
       );
@@ -187,6 +196,7 @@ export default function ListsScreen() {
           completed: false,
         });
       } else {
+        // Create note
         await createNote({
           title: trimmedTitle,
           notes: newEntryBody.trim() || undefined,
@@ -205,6 +215,8 @@ export default function ListsScreen() {
       Alert.alert('Error', 'Unable to add item. Please try again.');
     }
   };
+
+  // ========== TASK-SPECIFIC OPERATIONS ==========
 
   const handleToggleTask = async (task: Task) => {
     if (editingEntryId === task.id) {
@@ -299,6 +311,8 @@ export default function ListsScreen() {
     }
   };
 
+  // ========== NOTE-SPECIFIC OPERATIONS ==========
+
   const handleNoteLongPress = (note: Note) => {
     Alert.alert(
       note.title,
@@ -314,6 +328,8 @@ export default function ListsScreen() {
       { cancelable: true }
     );
   };
+
+  // ========== SHARED OPERATIONS (TASKS + NOTES) ==========
 
   const handleDeleteEntry = (entry: ListEntry) => {
     const entryLabel = entry.type === 'task' ? 'Task' : 'Note';
@@ -361,7 +377,7 @@ export default function ListsScreen() {
           text: 'OK',
           onPress: () => {
             setTimeout(() => {
-              entryEditInputRef.current?.focus();
+              editInputRef.current?.focus();
             }, 100);
           },
         },
@@ -394,6 +410,8 @@ export default function ListsScreen() {
     }
   };
 
+  // ========== RENDER: LISTS OVERVIEW ==========
+
   const renderList = ({ item }: { item: List }) => (
     <TouchableOpacity
       style={styles.listRow}
@@ -421,6 +439,8 @@ export default function ListsScreen() {
     </View>
   );
 
+  // ========== RENDER: LIST DETAIL WITH MIXED ENTRIES ==========
+
   const renderEntry = ({ item }: { item: ListEntry }) => {
     if (item.type === 'note') {
       return (
@@ -432,6 +452,7 @@ export default function ListsScreen() {
       );
     }
 
+    // Task rendering
     const task = item;
     const isEditing = editingEntryId === task.id;
     const priorityStyle = !task.completed ? getPriorityStyle(task.calm_priority) : {};
@@ -469,7 +490,7 @@ export default function ListsScreen() {
         <View style={styles.taskContent}>
           {isEditing ? (
             <TextInput
-              ref={entryEditInputRef}
+              ref={editInputRef}
               style={styles.taskEditInput}
               value={editingEntryTitle}
               onChangeText={setEditingEntryTitle}
@@ -565,6 +586,8 @@ export default function ListsScreen() {
     </View>
   );
 
+  // ========== MAIN RENDER ==========
+
   if (selectedList) {
     return (
       <>
@@ -595,6 +618,7 @@ export default function ListsScreen() {
                 onPress={e => e.stopPropagation()}
               >
                 <View style={styles.modalContent}>
+                  {/* Type Selector */}
                   <View style={styles.typeSelectorContainer}>
                     <TouchableOpacity
                       style={[
