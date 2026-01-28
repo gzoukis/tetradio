@@ -1,6 +1,9 @@
 import * as Crypto from 'expo-crypto';
 import { getDatabase } from './database';
-import type { Task, List, Note, CreateNote, UpdateNote } from '../types/models';
+import type { 
+  Task, List, Note, Checklist, ChecklistItem, ChecklistWithStats,
+  CreateNote, UpdateNote, CreateChecklist, UpdateChecklist, CreateChecklistItem, UpdateChecklistItem 
+} from '../types/models';
 
 export interface TaskWithListName extends Task {
   list_name?: string;
@@ -93,7 +96,7 @@ export async function createList(input: {
 }
 
 /**
- * Soft-delete a list and all its tasks
+ * Soft-delete a list and all its entries
  * 
  * VERSION 2: Updated to reference entries table
  */
@@ -112,11 +115,11 @@ export async function deleteList(listId: string): Promise<void> {
       [listId]
     );
 
-    // Soft-delete all tasks in this list
+    // Soft-delete all entries in this list (tasks, notes, checklists)
     await db.runAsync(
       `UPDATE entries
        SET deleted_at = datetime('now'), updated_at = datetime('now')
-       WHERE list_id = ? AND type = 'task' AND deleted_at IS NULL`,
+       WHERE list_id = ? AND deleted_at IS NULL`,
       [listId]
     );
 
@@ -126,6 +129,8 @@ export async function deleteList(listId: string): Promise<void> {
     throw error;
   }
 }
+
+// ========== TASK OPERATIONS ==========
 
 /**
  * Create a new task
@@ -278,7 +283,7 @@ export async function getAllActiveTasks(): Promise<TaskWithListName[]> {
 /**
  * Create a new note
  * 
- * VERSION 2: First non-task entry type
+ * VERSION 2.1: First non-task entry type (Ticket 8B)
  */
 export async function createNote(input: CreateNote): Promise<void> {
   const db = await getDatabase();
@@ -371,4 +376,297 @@ export async function getNotesByListId(listId: string): Promise<Note[]> {
     updated_at: row.updated_at,
     deleted_at: row.deleted_at,
   }));
+}
+
+// ========== CHECKLIST OPERATIONS (REDESIGNED) ==========
+
+/**
+ * Create checklist with items atomically
+ * 
+ * VERSION 2.2: Redesigned checklist as container (Ticket 8C Redesign)
+ * 
+ * Creates both the checklist entry and all items in a single transaction.
+ * This is the PRIMARY creation method for checklists.
+ * 
+ * @param input.title - Checklist title
+ * @param input.list_id - Parent list ID
+ * @param input.items - Array of item titles (strings)
+ * @returns The created checklist ID
+ */
+export async function createChecklistWithItems(input: {
+  title: string;
+  list_id?: string;
+  items: string[];
+}): Promise<string> {
+  const db = await getDatabase();
+  const checklistId = Crypto.randomUUID();
+
+  await db.execAsync('BEGIN TRANSACTION;');
+
+  try {
+    // 1. Create checklist entry
+    await db.runAsync(
+      `INSERT INTO entries (
+        id,
+        type,
+        title,
+        list_id,
+        created_at,
+        updated_at
+      ) VALUES (?, 'checklist', ?, ?, datetime('now'), datetime('now'))`,
+      [checklistId, input.title, input.list_id ?? null]
+    );
+
+    // 2. Create all checklist items
+    for (const itemTitle of input.items) {
+      if (itemTitle.trim()) {  // Skip empty items
+        await db.runAsync(
+          `INSERT INTO checklist_items (
+            id,
+            checklist_id,
+            title,
+            checked,
+            created_at,
+            updated_at
+          ) VALUES (?, ?, ?, 0, datetime('now'), datetime('now'))`,
+          [Crypto.randomUUID(), checklistId, itemTitle.trim()]
+        );
+      }
+    }
+
+    await db.execAsync('COMMIT;');
+    return checklistId;
+  } catch (error) {
+    await db.execAsync('ROLLBACK;');
+    throw error;
+  }
+}
+
+/**
+ * Update checklist (title only)
+ */
+export async function updateChecklist(input: UpdateChecklist): Promise<void> {
+  const db = await getDatabase();
+
+  const updates: string[] = [];
+  const values: any[] = [];
+
+  if (input.title !== undefined) {
+    updates.push('title = ?');
+    values.push(input.title);
+  }
+
+  // Always update the updated_at timestamp
+  updates.push("updated_at = datetime('now')");
+
+  // Add the id at the end for WHERE clause
+  values.push(input.id);
+
+  await db.runAsync(
+    `UPDATE entries
+     SET ${updates.join(', ')}
+     WHERE id = ? AND type = 'checklist'`,
+    values
+  );
+}
+
+/**
+ * Soft-delete a checklist and all its items
+ * 
+ * Cascades to checklist_items table
+ */
+export async function deleteChecklist(checklistId: string): Promise<void> {
+  const db = await getDatabase();
+
+  await db.execAsync('BEGIN TRANSACTION;');
+
+  try {
+    // Soft-delete checklist entry
+    await db.runAsync(
+      `UPDATE entries
+       SET deleted_at = datetime('now'), updated_at = datetime('now')
+       WHERE id = ? AND type = 'checklist'`,
+      [checklistId]
+    );
+
+    // Soft-delete all checklist items
+    await db.runAsync(
+      `UPDATE checklist_items
+       SET deleted_at = datetime('now'), updated_at = datetime('now')
+       WHERE checklist_id = ? AND deleted_at IS NULL`,
+      [checklistId]
+    );
+
+    await db.execAsync('COMMIT;');
+  } catch (error) {
+    await db.execAsync('ROLLBACK;');
+    throw error;
+  }
+}
+
+/**
+ * Get all checklists for a specific list WITH completion statistics
+ * 
+ * Returns ChecklistWithStats[] including checked_count and total_count
+ * Used for displaying progress in ListsScreen
+ */
+export async function getChecklistsByListId(listId: string): Promise<ChecklistWithStats[]> {
+  const db = await getDatabase();
+  
+  const rows = await db.getAllAsync<any>(
+    `SELECT 
+      e.*,
+      COUNT(ci.id) as total_count,
+      SUM(CASE WHEN ci.checked = 1 THEN 1 ELSE 0 END) as checked_count
+     FROM entries e
+     LEFT JOIN checklist_items ci ON e.id = ci.checklist_id AND ci.deleted_at IS NULL
+     WHERE e.list_id = ? AND e.type = 'checklist' AND e.deleted_at IS NULL
+     GROUP BY e.id
+     ORDER BY e.created_at DESC`,
+    [listId]
+  );
+  
+  return rows.map(row => ({
+    id: row.id,
+    type: 'checklist' as const,
+    title: row.title,
+    list_id: row.list_id,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    deleted_at: row.deleted_at,
+    checked_count: row.checked_count || 0,
+    total_count: row.total_count || 0,
+  }));
+}
+
+/**
+ * Get single checklist by ID
+ */
+export async function getChecklist(checklistId: string): Promise<Checklist | null> {
+  const db = await getDatabase();
+  
+  const row = await db.getFirstAsync<any>(
+    `SELECT * FROM entries 
+     WHERE id = ? AND type = 'checklist' AND deleted_at IS NULL`,
+    [checklistId]
+  );
+  
+  if (!row) return null;
+  
+  return {
+    id: row.id,
+    type: 'checklist' as const,
+    title: row.title,
+    list_id: row.list_id,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    deleted_at: row.deleted_at,
+  };
+}
+
+// ========== CHECKLIST ITEM OPERATIONS ==========
+
+/**
+ * Get all items for a checklist
+ */
+export async function getChecklistItems(checklistId: string): Promise<ChecklistItem[]> {
+  const db = await getDatabase();
+  
+  const rows = await db.getAllAsync<any>(
+    `SELECT * FROM checklist_items 
+     WHERE checklist_id = ? AND deleted_at IS NULL 
+     ORDER BY created_at ASC`,
+    [checklistId]
+  );
+  
+  return rows.map(row => ({
+    id: row.id,
+    checklist_id: row.checklist_id,
+    title: row.title,
+    checked: row.checked === 1,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    deleted_at: row.deleted_at,
+  }));
+}
+
+/**
+ * Create a new checklist item
+ * Used when adding items to existing checklist
+ */
+export async function createChecklistItem(input: CreateChecklistItem): Promise<void> {
+  const db = await getDatabase();
+
+  await db.runAsync(
+    `INSERT INTO checklist_items (
+      id,
+      checklist_id,
+      title,
+      checked,
+      created_at,
+      updated_at
+    ) VALUES (?, ?, ?, 0, datetime('now'), datetime('now'))`,
+    [Crypto.randomUUID(), input.checklist_id, input.title]
+  );
+}
+
+/**
+ * Toggle checklist item checked state
+ */
+export async function toggleChecklistItem(itemId: string, currentChecked: boolean): Promise<void> {
+  const db = await getDatabase();
+
+  await db.runAsync(
+    `UPDATE checklist_items
+     SET checked = ?, updated_at = datetime('now')
+     WHERE id = ?`,
+    [currentChecked ? 0 : 1, itemId]
+  );
+}
+
+/**
+ * Update checklist item (title)
+ */
+export async function updateChecklistItem(input: UpdateChecklistItem): Promise<void> {
+  const db = await getDatabase();
+
+  const updates: string[] = [];
+  const values: any[] = [];
+
+  if (input.title !== undefined) {
+    updates.push('title = ?');
+    values.push(input.title);
+  }
+
+  if (input.checked !== undefined) {
+    updates.push('checked = ?');
+    values.push(input.checked ? 1 : 0);
+  }
+
+  // Always update the updated_at timestamp
+  updates.push("updated_at = datetime('now')");
+
+  // Add the id at the end for WHERE clause
+  values.push(input.id);
+
+  await db.runAsync(
+    `UPDATE checklist_items
+     SET ${updates.join(', ')}
+     WHERE id = ?`,
+    values
+  );
+}
+
+/**
+ * Soft-delete a checklist item
+ */
+export async function deleteChecklistItem(itemId: string): Promise<void> {
+  const db = await getDatabase();
+
+  await db.runAsync(
+    `UPDATE checklist_items
+     SET deleted_at = datetime('now'), updated_at = datetime('now')
+     WHERE id = ?`,
+    [itemId]
+  );
 }

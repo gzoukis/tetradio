@@ -7,6 +7,11 @@
  * - All existing tasks now have type='task'
  * - Foundation for future entry types (note, checklist, record)
  * 
+ * VERSION 3 CHANGES (Ticket 8C Redesign - Checklist Containers):
+ * - Added checklist_items table
+ * - Checklists in entries table are now containers
+ * - Checklist items stored separately with FK to checklist
+ * 
  * Design Principles:
  * - Local-first: All data stored on device
  * - Soft deletes: deleted_at timestamp (30-day recovery)
@@ -16,20 +21,26 @@
  * - No AI fields in main schema (separate intelligence tables for future)
  */
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 /**
  * Entries Table (formerly Tasks)
  * Supports multiple entry types: task, note, checklist, record
  * 
  * VERSION 2: Added type column, renamed from tasks
+ * VERSION 3: Checklists now containers (completion NOT stored here, derived from items)
  * 
  * FIELD USAGE BY TYPE:
  * - type: ALL (required discriminator)
  * - title, notes, list_id: ALL (optional)
- * - completed, completed_at, due_date: task, checklist ONLY
+ * - completed, completed_at, due_date: task ONLY (NOT checklist anymore)
  * - calm_priority: task ONLY
  * - parent_task_id, snoozed_until: task ONLY (legacy fields, not used by other types)
+ * 
+ * CHECKLIST CHANGES (VERSION 3):
+ * - Checklist entries do NOT use: completed, completed_at, due_date, calm_priority
+ * - Completion is DERIVED from checklist_items table (all items checked = complete)
+ * - Checklist entry is just a container with title + list_id
  * 
  * LEGACY FIELDS (task-only, unchanged from v1):
  * - parent_task_id: Subtask hierarchy (POWER feature, inactive in v1)
@@ -66,6 +77,48 @@ export const CREATE_ENTRIES_INDEXES = `
   CREATE INDEX IF NOT EXISTS idx_entries_type ON entries(type) WHERE deleted_at IS NULL;
   CREATE INDEX IF NOT EXISTS idx_entries_due_date ON entries(due_date) WHERE deleted_at IS NULL AND completed = 0;
   CREATE INDEX IF NOT EXISTS idx_entries_completed ON entries(completed, completed_at) WHERE deleted_at IS NULL;
+`;
+
+/**
+ * Checklist Items Table
+ * Individual items within a checklist container
+ * 
+ * VERSION 3: NEW TABLE (Ticket 8C Redesign)
+ * 
+ * RELATIONSHIP:
+ * - Many checklist_items belong to one checklist (entries WHERE type='checklist')
+ * - Foreign key: checklist_id → entries.id
+ * - Cascade delete: Deleting checklist soft-deletes all items
+ * 
+ * COMPLETION LOGIC:
+ * - Each item has checked field (0/1)
+ * - Checklist completion is DERIVED: COUNT(checked=1) = COUNT(*) → complete
+ * - Never stored in entries table
+ * 
+ * ORDERING:
+ * - created_at ASC (items appear in creation order)
+ * - No explicit position field (creation order is natural order)
+ * 
+ * SOFT DELETES:
+ * - deleted_at timestamp for recovery
+ * - Deleting checklist sets deleted_at on all items
+ */
+export const CREATE_CHECKLIST_ITEMS_TABLE = `
+  CREATE TABLE IF NOT EXISTS checklist_items (
+    id TEXT PRIMARY KEY NOT NULL,
+    checklist_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    checked INTEGER DEFAULT 0 NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER,
+    FOREIGN KEY (checklist_id) REFERENCES entries(id) ON DELETE CASCADE
+  );
+`;
+
+export const CREATE_CHECKLIST_ITEMS_INDEXES = `
+  CREATE INDEX IF NOT EXISTS idx_checklist_items_checklist ON checklist_items(checklist_id) WHERE deleted_at IS NULL;
+  CREATE INDEX IF NOT EXISTS idx_checklist_items_checked ON checklist_items(checklist_id, checked) WHERE deleted_at IS NULL;
 `;
 
 /**
@@ -203,6 +256,8 @@ export const CREATE_EXPENSES_INDEXES = `
 export const INIT_SCHEMA = [
   CREATE_ENTRIES_TABLE,
   CREATE_ENTRIES_INDEXES,
+  CREATE_CHECKLIST_ITEMS_TABLE,
+  CREATE_CHECKLIST_ITEMS_INDEXES,
   CREATE_LISTS_TABLE,
   CREATE_LISTS_INDEXES,
   CREATE_LIST_ITEMS_TABLE,
@@ -239,3 +294,26 @@ export const MIGRATE_V1_TO_V2 = `
   -- Rename tasks table to entries
   ALTER TABLE tasks RENAME TO entries;
 `;
+
+/**
+ * Migration from Schema Version 2 to Version 3
+ * Add checklist_items table
+ * 
+ * CHANGES:
+ * 1. Creates checklist_items table
+ * 2. Creates indexes for checklist_items
+ * 
+ * PRESERVES:
+ * - All existing entries table data unchanged
+ * - Any existing type='checklist' entries remain (orphaned if created before this migration)
+ * - All other tables unchanged
+ * 
+ * NOTES:
+ * - This migration only adds a new table
+ * - No data transformation required
+ * - Old single-item checklists (if any exist) should be manually cleaned or migrated
+ */
+export const MIGRATE_V2_TO_V3 = [
+  CREATE_CHECKLIST_ITEMS_TABLE,
+  CREATE_CHECKLIST_ITEMS_INDEXES,
+].join('\n');

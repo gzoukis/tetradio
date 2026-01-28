@@ -1,5 +1,8 @@
 import DatePickerButton from '../components/DatePickerButton';
 import NoteCard from '../components/NoteCard';
+import NoteEditor from '../components/NoteEditor';
+import ChecklistRow from '../components/ChecklistRow';
+import ChecklistScreen from './ChecklistScreen';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -14,14 +17,16 @@ import {
   Platform,
   RefreshControl,
   ActionSheetIOS,
+  ScrollView,
 } from 'react-native';
 import { getAllLists, createList, deleteList } from '../db/operations';
 import { getTasksByListId, createTask, deleteTask, updateTask } from '../db/operations';
 import { getNotesByListId, createNote, deleteNote, updateNote } from '../db/operations';
-import type { List, Task, Note } from '../types/models';
+import { getChecklistsByListId, createChecklistWithItems, deleteChecklist } from '../db/operations';
+import type { List, Task, Note, ChecklistWithStats } from '../types/models';
 import { getPriorityLabel, getPriorityStyle } from '../utils/formatting';
 
-type ListEntry = Task | Note;
+type ListEntry = Task | Note | ChecklistWithStats;
 
 export default function ListsScreen() {
   const [lists, setLists] = useState<List[]>([]);
@@ -30,19 +35,25 @@ export default function ListsScreen() {
   const [newListName, setNewListName] = useState('');
 
   const [selectedList, setSelectedList] = useState<List | null>(null);
+  const [selectedChecklist, setSelectedChecklist] = useState<string | null>(null);
   const [entries, setEntries] = useState<ListEntry[]>([]);
   const [loadingEntries, setLoadingEntries] = useState(false);
   
   const [entryModalVisible, setEntryModalVisible] = useState(false);
-  const [entryType, setEntryType] = useState<'task' | 'note'>('task');
+  const [entryType, setEntryType] = useState<'task' | 'note' | 'checklist'>('task');
   const [newEntryTitle, setNewEntryTitle] = useState('');
   const [newEntryBody, setNewEntryBody] = useState('');
   const [newTaskDueDate, setNewTaskDueDate] = useState<number | undefined>(undefined);
   const [newTaskPriority, setNewTaskPriority] = useState<number>(2);
+  
+  // Checklist bulk creation
+  const [checklistItems, setChecklistItems] = useState<string[]>(['']);
 
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [editingEntryTitle, setEditingEntryTitle] = useState('');
   const entryEditInputRef = useRef<TextInput>(null);
+
+  const [editingNote, setEditingNote] = useState<Note | null>(null);
 
   const [refreshing, setRefreshing] = useState(false);
 
@@ -125,6 +136,7 @@ export default function ListsScreen() {
     setEditingEntryId(null);
     setEditingEntryTitle('');
     setSelectedList(list);
+    setSelectedChecklist(null);
   };
 
   const handleBackToLists = () => {
@@ -132,18 +144,31 @@ export default function ListsScreen() {
     setEntries([]);
     setEditingEntryId(null);
     setEditingEntryTitle('');
+    setSelectedChecklist(null);
+  };
+
+  const handleOpenChecklist = (checklistId: string) => {
+    setSelectedChecklist(checklistId);
+  };
+
+  const handleBackToListDetail = () => {
+    setSelectedChecklist(null);
+    if (selectedList) {
+      loadEntries(selectedList.id);
+    }
   };
 
   const loadEntries = async (listId: string) => {
     try {
       setLoadingEntries(true);
       
-      const [tasks, notes] = await Promise.all([
+      const [tasks, notes, checklists] = await Promise.all([
         getTasksByListId(listId),
         getNotesByListId(listId),
+        getChecklistsByListId(listId),
       ]);
 
-      const mixed: ListEntry[] = [...tasks, ...notes].sort(
+      const mixed: ListEntry[] = [...tasks, ...notes, ...checklists].sort(
         (a, b) => b.created_at - a.created_at
       );
 
@@ -186,11 +211,21 @@ export default function ListsScreen() {
           calm_priority: newTaskPriority,
           completed: false,
         });
-      } else {
+      } else if (entryType === 'note') {
         await createNote({
           title: trimmedTitle,
           notes: newEntryBody.trim() || undefined,
           list_id: selectedList.id,
+        });
+      } else if (entryType === 'checklist') {
+        const items = checklistItems
+          .map(item => item.trim())
+          .filter(item => item.length > 0);
+        
+        await createChecklistWithItems({
+          title: trimmedTitle,
+          list_id: selectedList.id,
+          items,
         });
       }
 
@@ -198,11 +233,31 @@ export default function ListsScreen() {
       setNewEntryBody('');
       setNewTaskDueDate(undefined);
       setNewTaskPriority(2);
+      setChecklistItems(['']);
       setEntryModalVisible(false);
       await loadEntries(selectedList.id);
     } catch (error) {
       console.error('Failed to create entry:', error);
       Alert.alert('Error', 'Unable to add item. Please try again.');
+    }
+  };
+
+  const handleAddChecklistItem = () => {
+    setChecklistItems([...checklistItems, '']);
+  };
+
+  const handleUpdateChecklistItem = (index: number, value: string) => {
+    const updated = [...checklistItems];
+    updated[index] = value;
+    setChecklistItems(updated);
+  };
+
+  const handleRemoveChecklistItem = (index: number) => {
+    if (checklistItems.length <= 1) {
+      setChecklistItems(['']);
+    } else {
+      const updated = checklistItems.filter((_, i) => i !== index);
+      setChecklistItems(updated);
     }
   };
 
@@ -270,9 +325,9 @@ export default function ListsScreen() {
                 'Set Priority',
                 'Choose priority level',
                 [
-                  { text: '🔵 Focus', onPress: () => handleSetPriority(task, 1) },
-                  { text: '⚪ Normal', onPress: () => handleSetPriority(task, 2) },
-                  { text: '⚫ Low key', onPress: () => handleSetPriority(task, 3) },
+                  { text: 'Focus', onPress: () => handleSetPriority(task, 1) },
+                  { text: 'Normal', onPress: () => handleSetPriority(task, 2) },
+                  { text: 'Low key', onPress: () => handleSetPriority(task, 3) },
                 ],
                 { cancelable: true }
               );
@@ -315,8 +370,46 @@ export default function ListsScreen() {
     );
   };
 
+  const handleSaveNote = async (title: string, body: string) => {
+    if (!editingNote || !selectedList) return;
+
+    try {
+      await updateNote({
+        id: editingNote.id,
+        title,
+        notes: body || undefined,
+      });
+
+      setEditingNote(null);
+      await loadEntries(selectedList.id);
+    } catch (error) {
+      console.error('Failed to update note:', error);
+      throw error;
+    }
+  };
+
+  const handleCancelNoteEdit = () => {
+    setEditingNote(null);
+  };
+
+  const handleChecklistLongPress = (checklist: ChecklistWithStats) => {
+    Alert.alert(
+      checklist.title,
+      'What would you like to do?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Checklist',
+          onPress: () => handleDeleteEntry(checklist),
+          style: 'destructive',
+        },
+      ],
+      { cancelable: true }
+    );
+  };
+
   const handleDeleteEntry = (entry: ListEntry) => {
-    const entryLabel = entry.type === 'task' ? 'Task' : 'Note';
+    const entryLabel = entry.type === 'task' ? 'Task' : entry.type === 'note' ? 'Note' : 'Checklist';
     
     Alert.alert(
       `Delete ${entryLabel}`,
@@ -330,8 +423,10 @@ export default function ListsScreen() {
             try {
               if (entry.type === 'task') {
                 await deleteTask(entry.id);
-              } else {
+              } else if (entry.type === 'note') {
                 await deleteNote(entry.id);
+              } else if (entry.type === 'checklist') {
+                await deleteChecklist(entry.id);
               }
               
               if (selectedList) {
@@ -348,6 +443,10 @@ export default function ListsScreen() {
   };
 
   const handleStartEditEntry = (entry: ListEntry) => {
+    if (entry.type === 'checklist') {
+      return;
+    }
+    
     setEditingEntryId(entry.id);
     setEditingEntryTitle(entry.title);
   };
@@ -375,7 +474,7 @@ export default function ListsScreen() {
           id: entry.id,
           title: trimmedTitle,
         });
-      } else {
+      } else if (entry.type === 'note') {
         await updateNote({
           id: entry.id,
           title: trimmedTitle,
@@ -426,8 +525,18 @@ export default function ListsScreen() {
       return (
         <NoteCard
           note={item}
-          onPress={() => handleStartEditEntry(item)}
+          onPress={() => setEditingNote(item)}
           onLongPress={() => handleNoteLongPress(item)}
+        />
+      );
+    }
+
+    if (item.type === 'checklist') {
+      return (
+        <ChecklistRow
+          checklist={item}
+          onPress={() => handleOpenChecklist(item.id)}
+          onLongPress={() => handleChecklistLongPress(item)}
         />
       );
     }
@@ -565,6 +674,27 @@ export default function ListsScreen() {
     </View>
   );
 
+  // Note editor (full screen)
+  if (editingNote) {
+    return (
+      <NoteEditor
+        note={editingNote}
+        onSave={handleSaveNote}
+        onCancel={handleCancelNoteEdit}
+      />
+    );
+  }
+
+  // Checklist detail screen
+  if (selectedChecklist) {
+    return (
+      <ChecklistScreen
+        checklistId={selectedChecklist}
+        onBack={handleBackToListDetail}
+      />
+    );
+  }
+
   if (selectedList) {
     return (
       <>
@@ -588,137 +718,195 @@ export default function ListsScreen() {
                 setNewEntryTitle('');
                 setNewEntryBody('');
                 setNewTaskPriority(2);
+                setChecklistItems(['']);
               }}
             >
               <TouchableOpacity
                 activeOpacity={1}
                 onPress={e => e.stopPropagation()}
               >
-                <View style={styles.modalContent}>
-                  <View style={styles.typeSelectorContainer}>
-                    <TouchableOpacity
-                      style={[
-                        styles.typeButton,
-                        entryType === 'task' && styles.typeButtonActive,
-                      ]}
-                      onPress={() => setEntryType('task')}
-                    >
-                      <Text
+                <ScrollView style={styles.modalScrollView}>
+                  <View style={styles.modalContent}>
+                    <View style={styles.typeSelectorContainer}>
+                      <TouchableOpacity
                         style={[
-                          styles.typeButtonText,
-                          entryType === 'task' && styles.typeButtonTextActive,
+                          styles.typeButton,
+                          entryType === 'task' && styles.typeButtonActive,
                         ]}
+                        onPress={() => setEntryType('task')}
                       >
-                        Task
-                      </Text>
-                    </TouchableOpacity>
+                        <Text
+                          style={[
+                            styles.typeButtonText,
+                            entryType === 'task' && styles.typeButtonTextActive,
+                          ]}
+                        >
+                          Task
+                        </Text>
+                      </TouchableOpacity>
 
-                    <TouchableOpacity
-                      style={[
-                        styles.typeButton,
-                        entryType === 'note' && styles.typeButtonActive,
-                      ]}
-                      onPress={() => setEntryType('note')}
-                    >
-                      <Text
+                      <TouchableOpacity
                         style={[
-                          styles.typeButtonText,
-                          entryType === 'note' && styles.typeButtonTextActive,
+                          styles.typeButton,
+                          entryType === 'note' && styles.typeButtonActive,
                         ]}
+                        onPress={() => setEntryType('note')}
                       >
-                        Note
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
+                        <Text
+                          style={[
+                            styles.typeButtonText,
+                            entryType === 'note' && styles.typeButtonTextActive,
+                          ]}
+                        >
+                          Note
+                        </Text>
+                      </TouchableOpacity>
 
-                  <Text style={styles.modalTitle}>
-                    {entryType === 'task' ? 'Add Task' : 'Add Note'}
-                  </Text>
+                      <TouchableOpacity
+                        style={[
+                          styles.typeButton,
+                          entryType === 'checklist' && styles.typeButtonActive,
+                        ]}
+                        onPress={() => setEntryType('checklist')}
+                      >
+                        <Text
+                          style={[
+                            styles.typeButtonText,
+                            entryType === 'checklist' && styles.typeButtonTextActive,
+                          ]}
+                        >
+                          Checklist
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
 
-                  <TextInput
-                    style={styles.input}
-                    placeholder={entryType === 'task' ? 'Task title' : 'Note title'}
-                    value={newEntryTitle}
-                    onChangeText={setNewEntryTitle}
-                    autoFocus
-                    returnKeyType={entryType === 'note' ? 'next' : 'done'}
-                    onSubmitEditing={entryType === 'task' ? handleCreateEntry : undefined}
-                  />
+                    <Text style={styles.modalTitle}>
+                      {entryType === 'task' ? 'Add Task' : entryType === 'note' ? 'Add Note' : 'Create Checklist'}
+                    </Text>
 
-                  {entryType === 'note' && (
                     <TextInput
-                      style={[styles.input, styles.bodyInput]}
-                      placeholder="Note body (optional)"
-                      value={newEntryBody}
-                      onChangeText={setNewEntryBody}
-                      multiline
-                      numberOfLines={4}
-                      textAlignVertical="top"
+                      style={styles.input}
+                      placeholder={
+                        entryType === 'task' ? 'Task title' : 
+                        entryType === 'note' ? 'Note title' : 
+                        'Checklist title'
+                      }
+                      value={newEntryTitle}
+                      onChangeText={setNewEntryTitle}
+                      autoFocus
+                      returnKeyType={entryType === 'note' ? 'next' : 'done'}
+                      onSubmitEditing={entryType !== 'note' && entryType !== 'checklist' ? handleCreateEntry : undefined}
                     />
-                  )}
 
-                  {entryType === 'task' && (
-                    <>
-                      <DatePickerButton
-                        value={newTaskDueDate}
-                        onChange={(timestamp) => setNewTaskDueDate(timestamp ?? undefined)}
+                    {entryType === 'note' && (
+                      <TextInput
+                        style={[styles.input, styles.bodyInput]}
+                        placeholder="Note body (optional)"
+                        value={newEntryBody}
+                        onChangeText={setNewEntryBody}
+                        multiline
+                        numberOfLines={4}
+                        textAlignVertical="top"
                       />
+                    )}
 
-                      <View style={styles.priorityContainer}>
-                        <Text style={styles.priorityLabel}>Priority</Text>
-                        <View style={styles.priorityButtons}>
-                          {[1, 2, 3].map((priority) => (
-                            <TouchableOpacity
-                              key={priority}
-                              style={[
-                                styles.priorityButton,
-                                newTaskPriority === priority && styles.priorityButtonActive,
-                              ]}
-                              onPress={() => setNewTaskPriority(priority)}
-                            >
-                              <Text
-                                style={[
-                                  styles.priorityButtonText,
-                                  newTaskPriority === priority && styles.priorityButtonTextActive,
-                                ]}
+                    {entryType === 'checklist' && (
+                      <View style={styles.checklistItemsContainer}>
+                        <Text style={styles.checklistItemsLabel}>Items:</Text>
+                        {checklistItems.map((item, index) => (
+                          <View key={index} style={styles.checklistItemInputRow}>
+                            <TextInput
+                              style={[styles.input, styles.checklistItemInput]}
+                              placeholder={`Item ${index + 1}`}
+                              value={item}
+                              onChangeText={value => handleUpdateChecklistItem(index, value)}
+                              returnKeyType="done"
+                            />
+                            {checklistItems.length > 1 && (
+                              <TouchableOpacity
+                                onPress={() => handleRemoveChecklistItem(index)}
+                                style={styles.removeItemButton}
                               >
-                                {getPriorityLabel(priority)}
-                              </Text>
-                            </TouchableOpacity>
-                          ))}
-                        </View>
+                                <Text style={styles.removeItemText}>✕</Text>
+                              </TouchableOpacity>
+                            )}
+                          </View>
+                        ))}
+                        <TouchableOpacity
+                          onPress={handleAddChecklistItem}
+                          style={styles.addItemButton}
+                        >
+                          <Text style={styles.addItemText}>+ Add another item</Text>
+                        </TouchableOpacity>
                       </View>
-                    </>
-                  )}
+                    )}
 
-                  <View style={styles.modalButtons}>
-                    <TouchableOpacity
-                      style={[styles.button, styles.buttonCancel]}
-                      onPress={() => {
-                        setEntryModalVisible(false);
-                        setNewEntryTitle('');
-                        setNewEntryBody('');
-                        setNewTaskPriority(2);
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.buttonCancelText}>Cancel</Text>
-                    </TouchableOpacity>
+                    {entryType === 'task' && (
+                      <>
+                        <DatePickerButton
+                          value={newTaskDueDate}
+                          onChange={(timestamp) => setNewTaskDueDate(timestamp ?? undefined)}
+                        />
 
-                    <TouchableOpacity
-                      style={[
-                        styles.button,
-                        styles.buttonCreate,
-                        !newEntryTitle.trim() && styles.buttonDisabled,
-                      ]}
-                      onPress={handleCreateEntry}
-                      activeOpacity={0.7}
-                      disabled={!newEntryTitle.trim()}
-                    >
-                      <Text style={styles.buttonCreateText}>Add</Text>
-                    </TouchableOpacity>
+                        <View style={styles.priorityContainer}>
+                          <Text style={styles.priorityLabel}>Priority</Text>
+                          <View style={styles.priorityButtons}>
+                            {[1, 2, 3].map((priority) => (
+                              <TouchableOpacity
+                                key={priority}
+                                style={[
+                                  styles.priorityButton,
+                                  newTaskPriority === priority && styles.priorityButtonActive,
+                                ]}
+                                onPress={() => setNewTaskPriority(priority)}
+                              >
+                                <Text
+                                  style={[
+                                    styles.priorityButtonText,
+                                    newTaskPriority === priority && styles.priorityButtonTextActive,
+                                  ]}
+                                >
+                                  {getPriorityLabel(priority)}
+                                </Text>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        </View>
+                      </>
+                    )}
+
+                    <View style={styles.modalButtons}>
+                      <TouchableOpacity
+                        style={[styles.button, styles.buttonCancel]}
+                        onPress={() => {
+                          setEntryModalVisible(false);
+                          setNewEntryTitle('');
+                          setNewEntryBody('');
+                          setNewTaskPriority(2);
+                          setChecklistItems(['']);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.buttonCancelText}>Cancel</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[
+                          styles.button,
+                          styles.buttonCreate,
+                          !newEntryTitle.trim() && styles.buttonDisabled,
+                        ]}
+                        onPress={handleCreateEntry}
+                        activeOpacity={0.7}
+                        disabled={!newEntryTitle.trim()}
+                      >
+                        <Text style={styles.buttonCreateText}>
+                          {entryType === 'checklist' ? 'Save Checklist' : 'Add'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                </View>
+                </ScrollView>
               </TouchableOpacity>
             </TouchableOpacity>
           </KeyboardAvoidingView>
@@ -951,6 +1139,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
+  modalScrollView: {
+    maxHeight: '90%',
+  },
   modalContent: {
     backgroundColor: '#fff',
     borderTopLeftRadius: 20,
@@ -994,6 +1185,52 @@ const styles = StyleSheet.create({
   },
   bodyInput: {
     minHeight: 100,
+  },
+  checklistItemsContainer: {
+    marginBottom: 16,
+  },
+  checklistItemsLabel: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginBottom: 8,
+    fontWeight: '600',
+  },
+  checklistItemInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  checklistItemInput: {
+    flex: 1,
+    marginBottom: 0,
+    marginRight: 8,
+  },
+  removeItemButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#fee2e2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  removeItemText: {
+    color: '#ef4444',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  addItemButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderStyle: 'dashed',
+    alignItems: 'center',
+  },
+  addItemText: {
+    color: '#6b7280',
+    fontSize: 14,
+    fontWeight: '600',
   },
   modalButtons: { flexDirection: 'row', gap: 12 },
   button: {

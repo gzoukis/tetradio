@@ -29,14 +29,14 @@ export default function NoteCard({ note, onPress, onLongPress }: NoteCardProps) 
     >
       {/* Note icon - visual distinction from tasks */}
       <View style={styles.noteIcon}>
-        <Text style={styles.noteIconText}>📝</Text>
+        <Text style={styles.noteIconText}>ðŸ“</Text>
       </View>
 
       {/* Note content */}
       <View style={styles.noteContent}>
         <Text style={styles.noteTitle}>{note.title}</Text>
         {note.notes && (
-          <Text style={styles.noteBody} numberOfLines={2}>
+          <Text style={styles.noteBody} numberOfLines={4}>
             {note.notes}
           </Text>
         )}

@@ -1,5 +1,5 @@
 import * as SQLite from 'expo-sqlite';
-import { INIT_SCHEMA, SCHEMA_VERSION, MIGRATE_V1_TO_V2 } from './schema';
+import { INIT_SCHEMA, SCHEMA_VERSION, MIGRATE_V1_TO_V2, MIGRATE_V2_TO_V3 } from './schema';
 
 let dbInstance: SQLite.SQLiteDatabase | null = null;
 
@@ -103,6 +103,47 @@ async function migrateV1ToV2(db: SQLite.SQLiteDatabase): Promise<void> {
 }
 
 /**
+ * Run migration from version 2 to version 3
+ * Add checklist_items table
+ * 
+ * CHANGES:
+ * - Creates checklist_items table
+ * - Creates indexes for checklist_items
+ * 
+ * SAFETY GUARANTEES:
+ * - Runs in transaction (automatic rollback on error)
+ * - Verifies table was created
+ * - Idempotent (safe to run multiple times via IF NOT EXISTS)
+ */
+async function migrateV2ToV3(db: SQLite.SQLiteDatabase): Promise<void> {
+  console.log('Running migration: V2 → V3 (Add checklist_items table)');
+  
+  try {
+    await db.execAsync('BEGIN TRANSACTION;');
+    
+    // Run migration SQL (creates checklist_items table + indexes)
+    await db.execAsync(MIGRATE_V2_TO_V3);
+    
+    // Verify table was created
+    const tableCheck = await db.getFirstAsync<{ count: number }>(
+      "SELECT COUNT(*) as count FROM sqlite_master WHERE type='table' AND name='checklist_items'"
+    );
+    
+    if (!tableCheck || tableCheck.count === 0) {
+      throw new Error('Migration verification failed: checklist_items table not created');
+    }
+    
+    console.log('Migration V2→V3 successful: checklist_items table created');
+    
+    await db.execAsync('COMMIT;');
+  } catch (error) {
+    await db.execAsync('ROLLBACK;');
+    console.error('Migration V2→V3 failed:', error);
+    throw error;
+  }
+}
+
+/**
  * Initialize SQLite database with schema
  * Creates all tables and indexes, runs migrations if needed
  */
@@ -149,8 +190,9 @@ export async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
         await migrateV1ToV2(db);
       }
       
-      // Add future migrations here:
-      // if (currentVersion < 3) { await migrateV2ToV3(db); }
+      if (currentVersion < 3) {
+        await migrateV2ToV3(db);
+      }
       
       await updateVersion(db, SCHEMA_VERSION);
       console.log(`Schema updated to version ${SCHEMA_VERSION}`);
@@ -209,6 +251,7 @@ export async function resetDatabase(): Promise<void> {
   try {
     // Drop all tables
     await db.execAsync('DROP TABLE IF EXISTS entries;');
+    await db.execAsync('DROP TABLE IF EXISTS checklist_items;');
     await db.execAsync('DROP TABLE IF EXISTS tasks;'); // In case old table exists
     await db.execAsync('DROP TABLE IF EXISTS lists;');
     await db.execAsync('DROP TABLE IF EXISTS list_items;');
