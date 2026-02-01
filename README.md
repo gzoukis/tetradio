@@ -52,18 +52,17 @@ This repository contains the source code for the mobile app interface and local 
 
 ## 📁 Repository Structure
 
-📦 tetradio
-├── 📂 assets
-├── 📂 src
-│   ├── 📂 components
-│   ├── 📂 db
-│   ├── 📂 screens
-│   └── 📂 utils
-├── 📜 App.tsx
-├── 📜 app.json
-├── 📜 index.ts
-└── 📜 tsconfig.json
-
+- 📦 **tetradio**
+  - 📂 assets
+  - 📂 src
+    - 📂 components
+    - 📂 db
+    - 📂 screens
+    - 📂 utils
+  - 📜 App.tsx
+  - 📜 app.json
+  - 📜 index.ts
+  - 📜 tsconfig.json
 
 
 
