@@ -19,6 +19,7 @@ import type { TaskWithListName } from '../db/operations';
 import type { List } from '../types/models';
 import { groupTasksByTime } from '../utils/timeClassification';
 import { getPriorityLabel } from '../utils/formatting';
+import { getDatabase } from '../db/database';
 
 type EntryType = 'task' | 'note' | 'checklist';
 type QuickCreateMode = 'entry' | 'new-list';
@@ -148,6 +149,116 @@ export default function OverviewScreen({
     } catch (error) {
       console.error('Failed to create list:', error);
       Alert.alert('Error', 'Unable to create list. Please try again.');
+    }
+  };
+  
+  const checkUnsortedInDatabase = async () => {
+    const db = await getDatabase();
+    
+    console.log('\n========== UNSORTED LIST DIAGNOSTIC ==========');
+    
+    // 1. Check if is_system column exists
+    try {
+      const columnInfo = await db.getAllAsync<any>(
+        "SELECT name FROM pragma_table_info('lists')"
+      );
+      console.log('📋 Lists table columns:', columnInfo.map(c => c.name).join(', '));
+      
+      const hasIsSystem = columnInfo.some(c => c.name === 'is_system');
+      console.log(`✅ is_system column exists: ${hasIsSystem}`);
+      
+      if (!hasIsSystem) {
+        console.error('❌ PROBLEM: is_system column is MISSING from lists table!');
+        console.log('💡 FIX: Run migration or reinstall app');
+        return;
+      }
+    } catch (error) {
+      console.error('❌ Failed to check columns:', error);
+    }
+    
+    // 2. Check ALL lists (including deleted)
+    try {
+      const allLists = await db.getAllAsync<any>(
+        'SELECT id, name, icon, is_system, is_archived, deleted_at FROM lists'
+      );
+      console.log(`\n📋 Total lists in database (including deleted): ${allLists.length}`);
+      allLists.forEach(list => {
+        console.log(`  ${list.icon || '?'} ${list.name} [system=${list.is_system}, archived=${list.is_archived}, deleted=${list.deleted_at ? 'YES' : 'NO'}]`);
+      });
+    } catch (error) {
+      console.error('❌ Failed to query all lists:', error);
+    }
+    
+    // 3. Check specifically for system lists
+    try {
+      const systemLists = await db.getAllAsync<any>(
+        'SELECT id, name, icon, is_system, deleted_at FROM lists WHERE is_system = 1'
+      );
+      console.log(`\n📥 System lists: ${systemLists.length}`);
+      systemLists.forEach(list => {
+        console.log(`  ${list.icon || '?'} ${list.name} [deleted=${list.deleted_at ? 'YES' : 'NO'}]`);
+      });
+    } catch (error) {
+      console.error('❌ Failed to query system lists:', error);
+    }
+    
+    // 4. Check active lists (what ListsScreen should show)
+    try {
+      const activeLists = await db.getAllAsync<any>(
+        'SELECT id, name, icon, is_system FROM lists WHERE deleted_at IS NULL AND is_archived = 0'
+      );
+      console.log(`\n✅ Active lists (what should appear in ListsScreen): ${activeLists.length}`);
+      activeLists.forEach(list => {
+        console.log(`  ${list.icon || '?'} ${list.name} ${list.is_system ? '[SYSTEM]' : '[USER]'}`);
+      });
+    } catch (error) {
+      console.error('❌ Failed to query active lists:', error);
+    }
+    
+    // 5. Check entries in Unsorted
+    try {
+      const systemListId = await db.getFirstAsync<any>(
+        'SELECT id FROM lists WHERE is_system = 1 AND deleted_at IS NULL LIMIT 1'
+      );
+      
+      if (systemListId) {
+        const entries = await db.getAllAsync<any>(
+          'SELECT id, title, type FROM entries WHERE list_id = ? AND deleted_at IS NULL',
+          [systemListId.id]
+        );
+        console.log(`\n📝 Entries in Unsorted list: ${entries.length}`);
+        entries.forEach(entry => {
+          console.log(`  - ${entry.title} [${entry.type}]`);
+        });
+      } else {
+        console.log('\n⚠️ No system list found in database');
+      }
+    } catch (error) {
+      console.error('❌ Failed to check Unsorted entries:', error);
+    }
+    
+    console.log('========== END DIAGNOSTIC ==========\n');
+  };
+  
+  const fixUnsortedArchived = async () => {
+    const db = await getDatabase();
+    
+    console.log('🔧 Fixing archived Unsorted list...');
+    
+    try {
+      // Un-archive Unsorted list
+      await db.runAsync(
+        `UPDATE lists 
+         SET is_archived = 0, updated_at = ?
+         WHERE is_system = 1 AND deleted_at IS NULL`,
+        [Date.now()]
+      );
+      
+      console.log('✅ Unsorted list un-archived!');
+      Alert.alert('Fixed!', 'Unsorted list is now un-archived. Go to Lists screen to see it.');
+    } catch (error) {
+      console.error('❌ Failed to fix Unsorted:', error);
+      Alert.alert('Error', 'Failed to fix Unsorted list');
     }
   };
   
@@ -354,6 +465,24 @@ export default function OverviewScreen({
           </View>
         )}
       </ScrollView>
+      
+      {/* DIAGNOSTIC BUTTON - Remove after testing */}
+      <TouchableOpacity
+        style={styles.diagnosticButton}
+        onPress={checkUnsortedInDatabase}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.diagnosticText}>🔍 CHECK DB</Text>
+      </TouchableOpacity>
+      
+      {/* FIX BUTTON - Remove after testing */}
+      <TouchableOpacity
+        style={styles.fixButton}
+        onPress={fixUnsortedArchived}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.fixText}>🔧 FIX</Text>
+      </TouchableOpacity>
       
       {/* Quick Create FAB */}
       <TouchableOpacity
@@ -705,6 +834,44 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   fabText: { fontSize: 32, color: '#fff', fontWeight: '300' },
+  
+  // Diagnostic button (temporary - remove after testing)
+  diagnosticButton: {
+    position: 'absolute',
+    left: 20,
+    bottom: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#ef4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 6,
+  },
+  diagnosticText: { fontSize: 14, color: '#fff', fontWeight: '600' },
+  
+  // Fix button (temporary - remove after testing)
+  fixButton: {
+    position: 'absolute',
+    left: 20,
+    bottom: 80,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#10b981',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 6,
+  },
+  fixText: { fontSize: 14, color: '#fff', fontWeight: '600' },
   
   // Modal
   modalContainer: { flex: 1 },

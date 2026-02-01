@@ -17,7 +17,7 @@ import {
   RefreshControl,
   ActionSheetIOS,
 } from 'react-native';
-import { getAllLists, createList, deleteList, getActiveEntriesCountByListId, archiveList } from '../db/operations';
+import { getAllLists, createList, deleteList } from '../db/operations';
 import { getTasksByListId, createTask, deleteTask, updateTask } from '../db/operations';
 import { getNotesByListId, createNote, deleteNote, updateNote } from '../db/operations';
 import { getChecklistsByListId, createChecklist, createChecklistWithItems, deleteChecklist } from '../db/operations';
@@ -143,13 +143,11 @@ export default function ListsScreen() {
     setSelectedList(list);
   };
 
-  const handleBackToLists = async () => {
+  const handleBackToLists = () => {
     setSelectedList(null);
     setEntries([]);
     setEditingEntryId(null);
     setEditingEntryTitle('');
-    // Refresh lists to reflect any archive changes
-    await loadLists();
   };
 
   const loadEntries = async (listId: string) => {
@@ -255,38 +253,11 @@ export default function ListsScreen() {
     }
 
     try {
-      const wasCompleted = task.completed;
-      const isUnsorted = selectedList?.name === 'Unsorted';
-      
       await updateTask({
         id: task.id,
         completed: !task.completed,
         completed_at: !task.completed ? Date.now() : undefined,
       });
-      
-      // Special handling for Unsorted tasks
-      if (isUnsorted && !wasCompleted && selectedList) {
-        // Just completed an Unsorted task
-        console.log('🔍 Checking if Unsorted should be archived...');
-        
-        // Reload entries to get fresh data
-        await loadEntries(selectedList.id);
-        
-        // Check if any active (not completed, not deleted) items remain
-        const activeCount = await getActiveEntriesCountByListId(selectedList.id);
-        console.log(`📊 Active entries in Unsorted: ${activeCount}`);
-        
-        if (activeCount === 0) {
-          // No active items left - archive Unsorted and navigate back
-          console.log('📦 Last Unsorted item completed, archiving list and navigating back');
-          await archiveList(selectedList.id);
-          handleBackToLists();
-          return;
-        } else {
-          console.log(`✅ Unsorted list still has ${activeCount} active items, keeping visible`);
-        }
-      }
-      
       if (selectedList) {
         await loadEntries(selectedList.id);
       }

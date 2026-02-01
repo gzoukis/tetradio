@@ -14,6 +14,9 @@
  * VERSION 2.2 CHANGES (Ticket 8C REDESIGN):
  * - Added Checklist type (container, not completable)
  * - Added ChecklistItem type (separate table)
+ * 
+ * VERSION 4 CHANGES (Ticket 9B):
+ * - Added is_system field to List model
  */
 
 /**
@@ -143,6 +146,8 @@ export interface ChecklistWithStats extends Checklist {
 
 /**
  * List model
+ * 
+ * VERSION 4: Added is_system field
  */
 export interface List extends BaseModel {
   name: string;
@@ -151,6 +156,7 @@ export interface List extends BaseModel {
   sort_order: number;
   is_pinned: boolean;
   is_archived: boolean;
+  is_system: boolean;
 }
 
 /**

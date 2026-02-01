@@ -1,5 +1,5 @@
 import * as SQLite from 'expo-sqlite';
-import { INIT_SCHEMA, SCHEMA_VERSION, MIGRATE_V1_TO_V2, MIGRATE_V2_TO_V3 } from './schema';
+import { INIT_SCHEMA, SCHEMA_VERSION, MIGRATE_V1_TO_V2, MIGRATE_V2_TO_V3, MIGRATE_V3_TO_V4 } from './schema';
 
 let dbInstance: SQLite.SQLiteDatabase | null = null;
 
@@ -8,7 +8,7 @@ let dbInstance: SQLite.SQLiteDatabase | null = null;
  * 
  * METADATA KEY: 'schema_version'
  * STORAGE TYPE: TEXT (string)
- * FORMAT: Integer as string (e.g., '1', '2', '3')
+ * FORMAT: Integer as string (e.g., '1', '2', '3', '4')
  */
 async function getCurrentVersion(db: SQLite.SQLiteDatabase): Promise<number> {
   try {
@@ -144,6 +144,49 @@ async function migrateV2ToV3(db: SQLite.SQLiteDatabase): Promise<void> {
 }
 
 /**
+ * Run migration from version 3 to version 4
+ * Add is_system column to lists table
+ * 
+ * TICKET: 9B - Quick Create from Overview
+ * 
+ * CHANGES:
+ * - Adds is_system column to lists table
+ * - Creates index for system lists
+ * 
+ * SAFETY GUARANTEES:
+ * - Runs in transaction (automatic rollback on error)
+ * - Verifies column was added
+ * - Idempotent (safe to run multiple times)
+ */
+async function migrateV3ToV4(db: SQLite.SQLiteDatabase): Promise<void> {
+  console.log('Running migration: V3 → V4 (Add is_system to lists)');
+  
+  try {
+    await db.execAsync('BEGIN TRANSACTION;');
+    
+    // Run migration SQL
+    await db.execAsync(MIGRATE_V3_TO_V4);
+    
+    // Verify column was added
+    const columnCheck = await db.getFirstAsync<{ count: number }>(
+      "SELECT COUNT(*) as count FROM pragma_table_info('lists') WHERE name='is_system'"
+    );
+    
+    if (!columnCheck || columnCheck.count === 0) {
+      throw new Error('Migration verification failed: is_system column not added');
+    }
+    
+    console.log('Migration V3→V4 successful: is_system column added');
+    
+    await db.execAsync('COMMIT;');
+  } catch (error) {
+    await db.execAsync('ROLLBACK;');
+    console.error('Migration V3→V4 failed:', error);
+    throw error;
+  }
+}
+
+/**
  * Initialize SQLite database with schema
  * Creates all tables and indexes, runs migrations if needed
  */
@@ -192,6 +235,10 @@ export async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
       
       if (currentVersion < 3) {
         await migrateV2ToV3(db);
+      }
+      
+      if (currentVersion < 4) {
+        await migrateV3ToV4(db);
       }
       
       await updateVersion(db, SCHEMA_VERSION);

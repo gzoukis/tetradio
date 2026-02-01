@@ -29,7 +29,7 @@ export default function NoteCard({ note, onPress, onLongPress }: NoteCardProps) 
     >
       {/* Note icon - visual distinction from tasks */}
       <View style={styles.noteIcon}>
-        <Text style={styles.noteIconText}>ðŸ“</Text>
+        <Text style={styles.noteLabel}>NOTE</Text>
       </View>
 
       {/* Note content */}
@@ -61,15 +61,21 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   noteIcon: {
-    width: 24,
-    height: 24,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    backgroundColor: '#fef3c7',
+    borderWidth: 1,
+    borderColor: '#fbbf24',
     marginRight: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
     marginTop: 2,
+    alignSelf: 'flex-start',
   },
-  noteIconText: {
-    fontSize: 18,
+  noteLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#92400e',
+    letterSpacing: 0.5,
   },
   noteContent: {
     flex: 1,

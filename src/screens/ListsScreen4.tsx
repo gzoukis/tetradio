@@ -17,10 +17,10 @@ import {
   RefreshControl,
   ActionSheetIOS,
 } from 'react-native';
-import { getAllLists, createList, deleteList, getActiveEntriesCountByListId, archiveList } from '../db/operations';
+import { getAllLists, createList, deleteList } from '../db/operations';
 import { getTasksByListId, createTask, deleteTask, updateTask } from '../db/operations';
 import { getNotesByListId, createNote, deleteNote, updateNote } from '../db/operations';
-import { getChecklistsByListId, createChecklist, createChecklistWithItems, deleteChecklist } from '../db/operations';
+import { getChecklistsByListId, createChecklist, deleteChecklist } from '../db/operations';
 import type { List, Task, Note, ChecklistWithStats } from '../types/models';
 import { getPriorityLabel, getPriorityStyle } from '../utils/formatting';
 
@@ -42,7 +42,6 @@ export default function ListsScreen() {
   const [newEntryBody, setNewEntryBody] = useState('');
   const [newTaskDueDate, setNewTaskDueDate] = useState<number | undefined>(undefined);
   const [newTaskPriority, setNewTaskPriority] = useState<number>(2);
-  const [newChecklistItems, setNewChecklistItems] = useState<string[]>(['', '', '']);
 
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [editingEntryTitle, setEditingEntryTitle] = useState('');
@@ -143,13 +142,11 @@ export default function ListsScreen() {
     setSelectedList(list);
   };
 
-  const handleBackToLists = async () => {
+  const handleBackToLists = () => {
     setSelectedList(null);
     setEntries([]);
     setEditingEntryId(null);
     setEditingEntryTitle('');
-    // Refresh lists to reflect any archive changes
-    await loadLists();
   };
 
   const loadEntries = async (listId: string) => {
@@ -183,22 +180,6 @@ export default function ListsScreen() {
     setRefreshing(false);
   };
 
-  const handleAddChecklistItem = () => {
-    setNewChecklistItems([...newChecklistItems, '']);
-  };
-
-  const handleRemoveChecklistItem = (index: number) => {
-    if (newChecklistItems.length > 1) {
-      setNewChecklistItems(newChecklistItems.filter((_, i) => i !== index));
-    }
-  };
-
-  const handleUpdateChecklistItem = (index: number, value: string) => {
-    const updated = [...newChecklistItems];
-    updated[index] = value;
-    setNewChecklistItems(updated);
-  };
-
   const handleCreateEntry = async () => {
     const trimmedTitle = newEntryTitle.trim();
 
@@ -228,11 +209,9 @@ export default function ListsScreen() {
           list_id: selectedList.id,
         });
       } else if (entryType === 'checklist') {
-        const validItems = newChecklistItems.filter(item => item.trim() !== '');
-        await createChecklistWithItems({
+        await createChecklist({
           title: trimmedTitle,
           list_id: selectedList.id,
-          items: validItems,
         });
       }
 
@@ -240,7 +219,6 @@ export default function ListsScreen() {
       setNewEntryBody('');
       setNewTaskDueDate(undefined);
       setNewTaskPriority(2);
-      setNewChecklistItems(['', '', '']);
       setEntryModalVisible(false);
       await loadEntries(selectedList.id);
     } catch (error) {
@@ -255,38 +233,11 @@ export default function ListsScreen() {
     }
 
     try {
-      const wasCompleted = task.completed;
-      const isUnsorted = selectedList?.name === 'Unsorted';
-      
       await updateTask({
         id: task.id,
         completed: !task.completed,
         completed_at: !task.completed ? Date.now() : undefined,
       });
-      
-      // Special handling for Unsorted tasks
-      if (isUnsorted && !wasCompleted && selectedList) {
-        // Just completed an Unsorted task
-        console.log('🔍 Checking if Unsorted should be archived...');
-        
-        // Reload entries to get fresh data
-        await loadEntries(selectedList.id);
-        
-        // Check if any active (not completed, not deleted) items remain
-        const activeCount = await getActiveEntriesCountByListId(selectedList.id);
-        console.log(`📊 Active entries in Unsorted: ${activeCount}`);
-        
-        if (activeCount === 0) {
-          // No active items left - archive Unsorted and navigate back
-          console.log('📦 Last Unsorted item completed, archiving list and navigating back');
-          await archiveList(selectedList.id);
-          handleBackToLists();
-          return;
-        } else {
-          console.log(`✅ Unsorted list still has ${activeCount} active items, keeping visible`);
-        }
-      }
-      
       if (selectedList) {
         await loadEntries(selectedList.id);
       }
@@ -521,7 +472,7 @@ export default function ListsScreen() {
       activeOpacity={0.7}
     >
       <View style={styles.listIcon}>
-        <Text style={styles.listIconText}>{item.icon || '📋'}</Text>
+        <Text style={styles.listIconText}>{item.icon || 'ðŸ“‹'}</Text>
       </View>
       <View style={styles.listContent}>
         <Text style={styles.listName}>{item.name}</Text>
@@ -606,7 +557,7 @@ export default function ListsScreen() {
           }}
           activeOpacity={0.7}
         >
-          {task.completed && <Text style={styles.checkmark}>✓</Text>}
+          {task.completed && <Text style={styles.checkmark}>âœ“</Text>}
         </TouchableOpacity>
 
         <View style={styles.taskContent}>
@@ -668,7 +619,7 @@ export default function ListsScreen() {
           <Text style={styles.backButtonText}>&lsaquo; Back</Text>
         </TouchableOpacity>
         <View style={styles.detailHeaderContent}>
-          <Text style={styles.detailHeaderIcon}>{selectedList?.icon || '📋'}</Text>
+          <Text style={styles.detailHeaderIcon}>{selectedList?.icon || 'ðŸ“‹'}</Text>
           <Text style={styles.detailHeaderTitle}>{selectedList?.name}</Text>
         </View>
       </View>
@@ -844,36 +795,6 @@ export default function ListsScreen() {
                       numberOfLines={4}
                       textAlignVertical="top"
                     />
-                  )}
-
-                  {entryType === 'checklist' && (
-                    <View style={styles.checklistItemsContainer}>
-                      <Text style={styles.checklistItemsLabel}>Items</Text>
-                      {newChecklistItems.map((item, index) => (
-                        <View key={index} style={styles.checklistItemRow}>
-                          <TextInput
-                            style={styles.checklistItemInput}
-                            placeholder={`Item ${index + 1}`}
-                            value={item}
-                            onChangeText={(value) => handleUpdateChecklistItem(index, value)}
-                          />
-                          {newChecklistItems.length > 1 && (
-                            <TouchableOpacity
-                              onPress={() => handleRemoveChecklistItem(index)}
-                              style={styles.removeItemButton}
-                            >
-                              <Text style={styles.removeItemText}>✕</Text>
-                            </TouchableOpacity>
-                          )}
-                        </View>
-                      ))}
-                      <TouchableOpacity
-                        style={styles.addItemButton}
-                        onPress={handleAddChecklistItem}
-                      >
-                        <Text style={styles.addItemText}>+ Add Item</Text>
-                      </TouchableOpacity>
-                    </View>
                   )}
 
                   {entryType === 'task' && (
@@ -1271,46 +1192,4 @@ const styles = StyleSheet.create({
   buttonCreate: { backgroundColor: '#3b82f6' },
   buttonCreateText: { color: '#fff', fontSize: 16, fontWeight: '600' },
   buttonDisabled: { opacity: 0.4 },
-  checklistItemsContainer: { marginBottom: 16 },
-  checklistItemsLabel: { fontSize: 14, color: '#6b7280', marginBottom: 8 },
-  checklistItemRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  checklistItemInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    backgroundColor: '#fff',
-  },
-  removeItemButton: {
-    marginLeft: 8,
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    backgroundColor: '#fee2e2',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  removeItemText: {
-    fontSize: 18,
-    color: '#dc2626',
-  },
-  addItemButton: {
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
-    borderStyle: 'dashed',
-    alignItems: 'center',
-  },
-  addItemText: {
-    fontSize: 14,
-    color: '#3b82f6',
-    fontWeight: '600',
-  },
 });

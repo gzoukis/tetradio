@@ -468,36 +468,6 @@ export async function createChecklistWithItems(input: {
 }
 
 /**
- * Create a simple checklist without items (for ListsScreen modal)
- */
-export async function createChecklist(input: {
-  title: string;
-  list_id?: string;
-}): Promise<string> {
-  const db = await getDatabase();
-  const checklistId = Crypto.randomUUID();
-
-  try {
-    await db.runAsync(
-      `INSERT INTO entries (
-        id,
-        type,
-        title,
-        list_id,
-        created_at,
-        updated_at
-      ) VALUES (?, 'checklist', ?, ?, datetime('now'), datetime('now'))`,
-      [checklistId, input.title, input.list_id ?? null]
-    );
-
-    return checklistId;
-  } catch (error) {
-    console.error('Failed to create checklist:', error);
-    throw error;
-  }
-}
-
-/**
  * Update checklist (title only)
  */
 export async function updateChecklist(input: UpdateChecklist): Promise<void> {
@@ -822,96 +792,6 @@ export async function getOrCreateUnsortedList(): Promise<List> {
     created_at: now,
     updated_at: now,
   };
-}
-
-/**
- * Get list by name
- * 
- * TICKET 9C: Completion/Un-completion logic helper
- * Used to find the Unsorted list for special handling
- */
-export async function getListByName(name: string): Promise<List | null> {
-  const db = await getDatabase();
-  const row = await db.getFirstAsync<any>(
-    'SELECT * FROM lists WHERE name = ? AND deleted_at IS NULL LIMIT 1',
-    [name]
-  );
-  
-  if (!row) {
-    return null;
-  }
-  
-  return {
-    id: row.id,
-    name: row.name,
-    icon: row.icon,
-    color_hint: row.color_hint,
-    sort_order: row.sort_order,
-    is_pinned: row.is_pinned === 1,
-    is_archived: row.is_archived === 1,
-    is_system: row.is_system === 1,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-    deleted_at: row.deleted_at,
-  };
-}
-
-/**
- * Count active (not completed) entries in a list
- * 
- * TICKET 9C: Completion logic helper
- * Counts all entry types (tasks, notes, checklists) that are:
- * - Not deleted (deleted_at IS NULL)
- * - Not completed (completed = 0 or NULL for non-completable types)
- * 
- * Used to determine if Unsorted list should be archived after task completion
- */
-export async function getActiveEntriesCountByListId(listId: string): Promise<number> {
-  const db = await getDatabase();
-  const result = await db.getFirstAsync<{ count: number }>(
-    `SELECT COUNT(*) as count 
-     FROM entries 
-     WHERE list_id = ? 
-       AND deleted_at IS NULL 
-       AND (completed = 0 OR completed IS NULL)`,
-    [listId]
-  );
-  
-  return result?.count ?? 0;
-}
-
-/**
- * Un-archive a list
- * 
- * TICKET 9C: Un-completion logic helper
- * Used when un-completing an Unsorted task to bring back the Unsorted list
- */
-export async function unarchiveList(listId: string): Promise<void> {
-  const db = await getDatabase();
-  const now = Date.now();
-  
-  console.log('📥 Un-archiving list:', listId);
-  await db.runAsync(
-    'UPDATE lists SET is_archived = 0, updated_at = ? WHERE id = ?',
-    [now, listId]
-  );
-}
-
-/**
- * Archive a list
- * 
- * TICKET 9C: Completion logic helper
- * Used when completing the last Unsorted task to hide the Unsorted list
- */
-export async function archiveList(listId: string): Promise<void> {
-  const db = await getDatabase();
-  const now = Date.now();
-  
-  console.log('📦 Archiving list:', listId);
-  await db.runAsync(
-    'UPDATE lists SET is_archived = 1, updated_at = ? WHERE id = ?',
-    [now, listId]
-  );
 }
 
 /**

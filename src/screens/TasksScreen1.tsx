@@ -11,7 +11,7 @@ import {
   Platform,
   ActionSheetIOS,
 } from 'react-native';
-import { getAllActiveTasks, updateTask, deleteTask, getListByName, getActiveEntriesCountByListId, archiveList, unarchiveList } from '../db/operations';
+import { getAllActiveTasks, updateTask, deleteTask } from '../db/operations';
 import type { TaskWithListName } from '../db/operations';
 import { groupTasksByTime } from '../utils/timeClassification';
 import { getPriorityStyle } from '../utils/formatting';
@@ -82,41 +82,7 @@ export default function TasksScreen({ goToLists }: { goToLists: () => void }) {
   };
 
   const handleToggleTask = async (task: TaskWithListName) => {
-    const wasCompleted = task.completed;
-    const isUnsorted = task.list_name === 'Unsorted';
-    
-    // Toggle the task completion
-    await updateTask({ 
-      id: task.id, 
-      completed: !task.completed,
-      completed_at: !task.completed ? Date.now() : undefined,
-    });
-    
-    // Special handling for Unsorted tasks
-    if (isUnsorted) {
-      if (!wasCompleted) {
-        // Just completed an Unsorted task
-        // Check if any active (not completed) items remain in Unsorted
-        const unsorted = await getListByName('Unsorted');
-        if (unsorted) {
-          const activeCount = await getActiveEntriesCountByListId(unsorted.id);
-          if (activeCount === 0) {
-            // No active items left - archive Unsorted list
-            console.log('📦 Last Unsorted item completed, archiving list');
-            await archiveList(unsorted.id);
-          }
-        }
-      } else {
-        // Just un-completed an Unsorted task
-        // Ensure Unsorted list is visible
-        const unsorted = await getListByName('Unsorted');
-        if (unsorted && unsorted.is_archived) {
-          console.log('📥 Un-completing Unsorted task, bringing back list');
-          await unarchiveList(unsorted.id);
-        }
-      }
-    }
-    
+    await updateTask({ id: task.id, completed: !task.completed });
     await loadTasks();
   };
 
@@ -194,9 +160,9 @@ export default function TasksScreen({ goToLists }: { goToLists: () => void }) {
                 'Set Priority',
                 'Choose priority level',
                 [
-                  { text: '🔵 Focus', onPress: () => handleSetPriority(task, 1) },
-                  { text: '⚪ Normal', onPress: () => handleSetPriority(task, 2) },
-                  { text: '⚫ Low key', onPress: () => handleSetPriority(task, 3) },
+                  { text: 'ðŸ”µ Focus', onPress: () => handleSetPriority(task, 1) },
+                  { text: 'âšª Normal', onPress: () => handleSetPriority(task, 2) },
+                  { text: 'âš« Low key', onPress: () => handleSetPriority(task, 3) },
                 ],
                 { cancelable: true }
               );
@@ -259,7 +225,7 @@ export default function TasksScreen({ goToLists }: { goToLists: () => void }) {
           delayLongPress={500}
         >
           <View style={[styles.checkbox, item.completed && styles.checkboxChecked]}>
-            {item.completed && <Text style={styles.checkmark}>✓</Text>}
+            {item.completed && <Text style={styles.checkmark}>âœ“</Text>}
           </View>
 
           <View style={styles.taskContent}>
@@ -298,7 +264,7 @@ export default function TasksScreen({ goToLists }: { goToLists: () => void }) {
     if (sectionTitle === 'OVERDUE') {
       return (
         <View style={styles.sectionEmptyContainer}>
-          <Text style={styles.sectionEmptyText}>Nothing overdue 👍</Text>
+          <Text style={styles.sectionEmptyText}>Nothing overdue ðŸ‘</Text>
         </View>
       );
     }
@@ -329,7 +295,7 @@ export default function TasksScreen({ goToLists }: { goToLists: () => void }) {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>Loading…</Text>
+        <Text style={styles.loadingText}>Loadingâ€¦</Text>
       </View>
     );
   }

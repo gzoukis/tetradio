@@ -1,16 +1,20 @@
 /**
  * SQLite schema definitions for Tetradio
  * 
- * VERSION 2 CHANGES (Ticket 8A - Entry Architecture Foundation):
- * - Renamed tasks → entries
- * - Added type column (TEXT NOT NULL DEFAULT 'task')
- * - All existing tasks now have type='task'
- * - Foundation for future entry types (note, checklist, record)
+ * VERSION 4 CHANGES (Ticket 9B - Quick Create from Overview):
+ * - Added is_system column to lists table
+ * - Enables Unsorted list functionality (auto-create, auto-delete)
  * 
  * VERSION 3 CHANGES (Ticket 8C Redesign - Checklist Containers):
  * - Added checklist_items table
  * - Checklists in entries table are now containers
  * - Checklist items stored separately with FK to checklist
+ * 
+ * VERSION 2 CHANGES (Ticket 8A - Entry Architecture Foundation):
+ * - Renamed tasks → entries
+ * - Added type column (TEXT NOT NULL DEFAULT 'task')
+ * - All existing tasks now have type='task'
+ * - Foundation for future entry types (note, checklist, record)
  * 
  * Design Principles:
  * - Local-first: All data stored on device
@@ -21,7 +25,7 @@
  * - No AI fields in main schema (separate intelligence tables for future)
  */
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 /**
  * Entries Table (formerly Tasks)
@@ -124,6 +128,8 @@ export const CREATE_CHECKLIST_ITEMS_INDEXES = `
 /**
  * Lists Table
  * Organization for tasks and items
+ * 
+ * VERSION 4: Added is_system column for system-managed lists (Unsorted)
  */
 export const CREATE_LISTS_TABLE = `
   CREATE TABLE IF NOT EXISTS lists (
@@ -134,6 +140,7 @@ export const CREATE_LISTS_TABLE = `
     sort_order INTEGER DEFAULT 0 NOT NULL,
     is_pinned INTEGER DEFAULT 0 NOT NULL,
     is_archived INTEGER DEFAULT 0 NOT NULL,
+    is_system INTEGER DEFAULT 0 NOT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     deleted_at INTEGER
@@ -142,6 +149,7 @@ export const CREATE_LISTS_TABLE = `
 
 export const CREATE_LISTS_INDEXES = `
   CREATE INDEX IF NOT EXISTS idx_lists_active ON lists(is_archived, sort_order) WHERE deleted_at IS NULL;
+  CREATE INDEX IF NOT EXISTS idx_lists_system ON lists(is_system) WHERE deleted_at IS NULL;
 `;
 
 /**
@@ -317,3 +325,37 @@ export const MIGRATE_V2_TO_V3 = [
   CREATE_CHECKLIST_ITEMS_TABLE,
   CREATE_CHECKLIST_ITEMS_INDEXES,
 ].join('\n');
+
+/**
+ * Migration from Schema Version 3 to Version 4
+ * Add is_system column to lists table
+ * 
+ * TICKET: 9B - Quick Create from Overview
+ * 
+ * CHANGES:
+ * 1. Adds is_system column to lists table (INTEGER DEFAULT 0 NOT NULL)
+ * 2. Creates index for system lists
+ * 
+ * PRESERVES:
+ * - All existing lists table data unchanged
+ * - All existing lists get is_system = 0 (user-created)
+ * - All other tables unchanged
+ * 
+ * PURPOSE:
+ * - Enables Unsorted list (system-managed, auto-create, auto-delete)
+ * - System lists have is_system = 1
+ * - User-created lists have is_system = 0
+ * - Future: Could support other system lists if needed
+ * 
+ * NOTES:
+ * - This migration only adds a column
+ * - No data transformation required
+ * - Default value (0) preserves existing behavior
+ */
+export const MIGRATE_V3_TO_V4 = `
+  -- Add is_system column to lists table
+  ALTER TABLE lists ADD COLUMN is_system INTEGER DEFAULT 0 NOT NULL;
+  
+  -- Create index for system lists
+  CREATE INDEX IF NOT EXISTS idx_lists_system ON lists(is_system) WHERE deleted_at IS NULL;
+`;
