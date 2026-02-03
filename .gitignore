@@ -39,3 +39,18 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Numbered backup files
+*[0-9].ts
+*[0-9].tsx
+
+# App backups
+App*.ts
+App*.tsx
+
+# Screen backups
+*Screen*[0-9].tsx
+
+# DB operation backups
+operations*[0-9].ts
+
