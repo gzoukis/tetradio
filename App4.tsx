@@ -72,7 +72,6 @@ async function safeDatabaseFix() {
 
 function AppContent() {
   const [tab, setTab] = useState<Tab>('overview');
-  const [selectedListId, setSelectedListId] = useState<string | undefined>(undefined);
   const insets = useSafeAreaInsets();
 
   // Run fix once on mount
@@ -85,12 +84,7 @@ function AppContent() {
       case 'tasks':
         return <TasksScreen goToLists={() => setTab('lists')} />;
       case 'lists':
-        return (
-          <ListsScreen 
-            initialListId={selectedListId}
-            onListIdChange={setSelectedListId}
-          />
-        );
+        return <ListsScreen />;
       case 'expenses':
         return <ExpensesScreen />;
       case 'settings':
@@ -99,8 +93,9 @@ function AppContent() {
         return <OverviewScreen 
           onViewTasks={() => setTab('tasks')}
           goToLists={(listId) => {
-            setSelectedListId(listId);
             setTab('lists');
+            // Note: ListsScreen will need to handle listId selection
+            // For now just navigate to lists tab
           }}
         />;
     }

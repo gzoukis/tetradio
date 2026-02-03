@@ -24,7 +24,7 @@ let fixAlreadyRan = false;
  */
 async function safeDatabaseFix() {
   if (fixAlreadyRan) {
-    console.log('â­ï¸  Database fix already ran, skipping...');
+    console.log('⏭️  Database fix already ran, skipping...');
     return;
   }
   
@@ -48,7 +48,7 @@ async function safeDatabaseFix() {
           is_pinned, is_archived, is_system,
           created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        ['unsorted-system-list', 'Unsorted', 'ðŸ“¥', '#9ca3af', 9999, 0, 0, 1, now, now]
+        ['unsorted-system-list', 'Unsorted', '📥', '#9ca3af', 9999, 0, 0, 1, now, now]
       );
       console.log('✅ Unsorted list created');
     } else if (unsorted.deleted_at) {
@@ -65,7 +65,7 @@ async function safeDatabaseFix() {
     console.log('✅ Safe database fix complete');
     
   } catch (error) {
-    console.error('âŒ Database fix failed:', error);
+    console.error('❌ Database fix failed:', error);
     // Don't show alert - just log error
   }
 }
@@ -80,29 +80,27 @@ function AppContent() {
     safeDatabaseFix();
   }, []);
 
+  const handleGoToLists = (listId?: string) => {
+    setSelectedListId(listId);
+    setTab('lists');
+  };
+
+  const handleListIdChange = (listId: string | undefined) => {
+    setSelectedListId(listId);
+  };
+
   const renderScreen = () => {
     switch (tab) {
       case 'tasks':
         return <TasksScreen goToLists={() => setTab('lists')} />;
       case 'lists':
-        return (
-          <ListsScreen 
-            initialListId={selectedListId}
-            onListIdChange={setSelectedListId}
-          />
-        );
+        return <ListsScreen initialListId={selectedListId} onListIdChange={handleListIdChange} />;
       case 'expenses':
         return <ExpensesScreen />;
       case 'settings':
         return <SettingsScreen />;
       default:
-        return <OverviewScreen 
-          onViewTasks={() => setTab('tasks')}
-          goToLists={(listId) => {
-            setSelectedListId(listId);
-            setTab('lists');
-          }}
-        />;
+        return <OverviewScreen onViewTasks={() => setTab('tasks')} goToLists={handleGoToLists} />;
     }
   };
 

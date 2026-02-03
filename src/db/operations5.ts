@@ -11,7 +11,7 @@ export interface TaskWithListName extends Task {
 
 /**
  * Get all tasks for a specific list
- * Returns tasks sorted by: completed status → priority → created date
+ * Returns tasks sorted by: completed status â†’ priority â†’ created date
  * 
  * VERSION 2: Updated to query entries table with type filter
  */
@@ -51,7 +51,7 @@ export async function getAllLists(): Promise<List[]> {
     'SELECT * FROM lists WHERE deleted_at IS NULL ORDER BY sort_order ASC'
   );
 
-  console.log(`🔍 getAllLists returned ${rows.length} rows from database`);
+  console.log(`ðŸ” getAllLists returned ${rows.length} rows from database`);
   rows.forEach(row => {
     console.log(`  - ${row.icon || '?'} ${row.name} [is_system=${row.is_system}, deleted_at=${row.deleted_at}]`);
   });
@@ -468,6 +468,36 @@ export async function createChecklistWithItems(input: {
 }
 
 /**
+ * Create a simple checklist without items (for ListsScreen modal)
+ */
+export async function createChecklist(input: {
+  title: string;
+  list_id?: string;
+}): Promise<string> {
+  const db = await getDatabase();
+  const checklistId = Crypto.randomUUID();
+
+  try {
+    await db.runAsync(
+      `INSERT INTO entries (
+        id,
+        type,
+        title,
+        list_id,
+        created_at,
+        updated_at
+      ) VALUES (?, 'checklist', ?, ?, datetime('now'), datetime('now'))`,
+      [checklistId, input.title, input.list_id ?? null]
+    );
+
+    return checklistId;
+  } catch (error) {
+    console.error('Failed to create checklist:', error);
+    throw error;
+  }
+}
+
+/**
  * Update checklist (title only)
  */
 export async function updateChecklist(input: UpdateChecklist): Promise<void> {
@@ -704,12 +734,12 @@ export async function deleteChecklistItem(itemId: string): Promise<void> {
  * TICKET 9B: Quick Create from Overview
  * 
  * Auto-creates a system list for entries without an assigned list.
- * Properties: name='Unsorted', icon='📥', is_system=true, sort_order=9999
+ * Properties: name='Unsorted', icon='ðŸ“¥', is_system=true, sort_order=9999
  */
 export async function getOrCreateUnsortedList(): Promise<List> {
   const db = await getDatabase();
   
-  // Try to find existing Unsorted list
+  // Try to find existing Unsorted list (even if archived)
   const existing = await db.getFirstAsync<any>(
     `SELECT * FROM lists 
      WHERE is_system = 1 AND deleted_at IS NULL
@@ -717,6 +747,30 @@ export async function getOrCreateUnsortedList(): Promise<List> {
   );
   
   if (existing) {
+    // If it's archived, un-archive it (user is adding an entry)
+    if (existing.is_archived === 1) {
+      console.log('ðŸ“¥ Un-archiving Unsorted list (new entry being added)');
+      const now = Date.now();
+      await db.runAsync(
+        'UPDATE lists SET is_archived = 0, updated_at = ? WHERE id = ?',
+        [now, existing.id]
+      );
+      
+      return {
+        id: existing.id,
+        name: existing.name,
+        icon: existing.icon,
+        color_hint: existing.color_hint,
+        sort_order: existing.sort_order,
+        is_pinned: existing.is_pinned === 1,
+        is_archived: false, // Now un-archived
+        is_system: existing.is_system === 1,
+        created_at: existing.created_at,
+        updated_at: now,
+        deleted_at: existing.deleted_at,
+      };
+    }
+    
     return {
       id: existing.id,
       name: existing.name,
@@ -736,6 +790,7 @@ export async function getOrCreateUnsortedList(): Promise<List> {
   const id = Crypto.randomUUID();
   const now = Date.now();
   
+  console.log('ðŸ“¥ Creating new Unsorted list');
   await db.runAsync(
     `INSERT INTO lists (
       id, name, icon, color_hint, sort_order, is_pinned, is_archived, is_system, 
@@ -744,7 +799,7 @@ export async function getOrCreateUnsortedList(): Promise<List> {
     [
       id,
       'Unsorted',
-      '📥',
+      'ðŸ“¥',
       '#9ca3af',
       9999,
       0,
@@ -758,7 +813,7 @@ export async function getOrCreateUnsortedList(): Promise<List> {
   return {
     id,
     name: 'Unsorted',
-    icon: '📥',
+    icon: 'ðŸ“¥',
     color_hint: '#9ca3af',
     sort_order: 9999,
     is_pinned: false,
@@ -770,16 +825,182 @@ export async function getOrCreateUnsortedList(): Promise<List> {
 }
 
 /**
+ * Get list by name
+ * 
+ * TICKET 9C: Completion/Un-completion logic helper
+ * Used to find the Unsorted list for special handling
+ */
+export async function getListByName(name: string): Promise<List | null> {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<any>(
+    'SELECT * FROM lists WHERE name = ? AND deleted_at IS NULL LIMIT 1',
+    [name]
+  );
+  
+  if (!row) {
+    return null;
+  }
+  
+  return {
+    id: row.id,
+    name: row.name,
+    icon: row.icon,
+    color_hint: row.color_hint,
+    sort_order: row.sort_order,
+    is_pinned: row.is_pinned === 1,
+    is_archived: row.is_archived === 1,
+    is_system: row.is_system === 1,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    deleted_at: row.deleted_at,
+  };
+}
+
+/**
+ * Count active (not completed) entries in a list
+ * 
+ * TICKET 9C: Completion logic helper
+ * Counts all entry types (tasks, notes, checklists) that are:
+ * - Not deleted (deleted_at IS NULL)
+ * - Not completed (completed = 0 or NULL for non-completable types)
+ * 
+ * Used to determine if Unsorted list should be archived after task completion
+ */
+export async function getActiveEntriesCountByListId(listId: string): Promise<number> {
+  const db = await getDatabase();
+  const result = await db.getFirstAsync<{ count: number }>(
+    `SELECT COUNT(*) as count 
+     FROM entries 
+     WHERE list_id = ? 
+       AND deleted_at IS NULL 
+       AND (completed = 0 OR completed IS NULL)`,
+    [listId]
+  );
+  
+  return result?.count ?? 0;
+}
+
+/**
+ * Un-archive a list
+ * 
+ * TICKET 9C: Un-completion logic helper
+ * Used when un-completing an Unsorted task to bring back the Unsorted list
+ */
+export async function unarchiveList(listId: string): Promise<void> {
+  const db = await getDatabase();
+  const now = Date.now();
+  
+  console.log('ðŸ“¥ Un-archiving list:', listId);
+  await db.runAsync(
+    'UPDATE lists SET is_archived = 0, updated_at = ? WHERE id = ?',
+    [now, listId]
+  );
+}
+
+/**
+ * Archive a list
+ * 
+ * TICKET 9C: Completion logic helper
+ * Used when completing the last Unsorted task to hide the Unsorted list
+ */
+export async function archiveList(listId: string): Promise<void> {
+  const db = await getDatabase();
+  const now = Date.now();
+  
+  console.log('ðŸ“¦ Archiving list:', listId);
+  await db.runAsync(
+    'UPDATE lists SET is_archived = 1, updated_at = ? WHERE id = ?',
+    [now, listId]
+  );
+}
+
+/**
  * Clean up Unsorted list if empty
  * 
- * TICKET 9B: Auto-deletion logic
+ * TICKET 9B: Auto-archive logic
  * 
- * Soft-deletes the Unsorted system list when all entries are removed.
+ * Archives the Unsorted system list when all entries are removed.
  * Called automatically after deleteTask, deleteNote, deleteChecklist.
  */
 export async function cleanupUnsortedListIfEmpty(): Promise<void> {
-  // TEMPORARILY DISABLED FOR DEBUGGING
-  // This function was causing Unsorted to disappear immediately after creation
-  console.log('cleanupUnsortedListIfEmpty called but disabled for debugging');
-  return;
+  const db = await getDatabase();
+  
+  try {
+    // Find Unsorted list
+    const unsortedList = await db.getFirstAsync<{ id: string }>(
+      'SELECT id FROM lists WHERE is_system = 1 AND deleted_at IS NULL LIMIT 1'
+    );
+    
+    if (!unsortedList) {
+      // No Unsorted list exists, nothing to do
+      return;
+    }
+    
+    // Count active entries in Unsorted
+    const entryCount = await db.getFirstAsync<{ count: number }>(
+      'SELECT COUNT(*) as count FROM entries WHERE list_id = ? AND deleted_at IS NULL',
+      [unsortedList.id]
+    );
+    
+    if (entryCount && entryCount.count === 0) {
+      // No entries left - archive the Unsorted list
+      console.log('ðŸ—‘ï¸ Unsorted list is empty, archiving...');
+      await db.runAsync(
+        'UPDATE lists SET is_archived = 1, updated_at = ? WHERE id = ?',
+        [Date.now(), unsortedList.id]
+      );
+      console.log('âœ… Unsorted list archived');
+    }
+  } catch (error) {
+    console.error('âŒ Failed to cleanup Unsorted list:', error);
+  }
+}
+
+/**
+ * Move an entry to a different list
+ * 
+ * TICKET 9D: Move Items Between Lists
+ * 
+ * Generic operation that works for all entry types (Task, Note, Checklist).
+ * Automatically triggers Unsorted cleanup if source list was Unsorted.
+ * 
+ * @param entryId - The ID of the entry to move
+ * @param newListId - The ID of the destination list
+ * @param sourceListId - Optional: The ID of the source list (for Unsorted cleanup)
+ */
+export async function moveEntryToList(input: {
+  entryId: string;
+  newListId: string;
+  sourceListId?: string;
+}): Promise<void> {
+  const db = await getDatabase();
+  const now = Date.now();
+  
+  try {
+    // Update the entry's list_id
+    await db.runAsync(
+      `UPDATE entries 
+       SET list_id = ?, updated_at = ? 
+       WHERE id = ? AND deleted_at IS NULL`,
+      [input.newListId, now, input.entryId]
+    );
+    
+    console.log(`📦 Moved entry ${input.entryId} to list ${input.newListId}`);
+    
+    // If source was Unsorted, check if it needs cleanup
+    if (input.sourceListId) {
+      const sourceList = await db.getFirstAsync<{ is_system: number }>(
+        'SELECT is_system FROM lists WHERE id = ? AND deleted_at IS NULL',
+        [input.sourceListId]
+      );
+      
+      if (sourceList && sourceList.is_system === 1) {
+        console.log('🔍 Source was Unsorted, checking cleanup...');
+        await cleanupUnsortedListIfEmpty();
+      }
+    }
+  } catch (error) {
+    console.error('❌ Failed to move entry:', error);
+    throw error;
+  }
 }

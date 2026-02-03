@@ -24,14 +24,11 @@ type EntryType = 'task' | 'note' | 'checklist';
 type QuickCreateMode = 'entry' | 'new-list';
 
 export default function OverviewScreen({
-  onViewTasks,
-  goToLists,
+  goToTasks,
 }: {
-  onViewTasks: () => void;
-  goToLists: (listId?: string) => void;
+  goToTasks: () => void;
 }) {
   const [tasks, setTasks] = useState<TaskWithListName[]>([]);
-  const [pinnedLists, setPinnedLists] = useState<List[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   
@@ -56,7 +53,6 @@ export default function OverviewScreen({
   useEffect(() => {
     loadTasks();
     loadLists();
-    loadPinnedLists();
   }, []);
 
   const loadTasks = async () => {
@@ -74,7 +70,7 @@ export default function OverviewScreen({
   const loadLists = async () => {
     try {
       const lists = await getAllLists();
-      console.log(`ðŸ“‹ Loaded ${lists.length} total lists from database`);
+      console.log(`📋 Loaded ${lists.length} total lists from database`);
       
       // Show ONLY user lists in the picker (not system lists like Unsorted)
       // Unsorted should only appear in Lists screen, not in the picker
@@ -87,18 +83,7 @@ export default function OverviewScreen({
       
       setAllLists(userLists);
     } catch (error) {
-      console.error('âŒ Failed to load lists:', error);
-    }
-  };
-
-  const loadPinnedLists = async () => {
-    try {
-      const lists = await getAllLists();
-      const pinned = lists.filter(l => l.is_pinned && !l.is_system && !l.is_archived)
-        .sort((a, b) => a.sort_order - b.sort_order);
-      setPinnedLists(pinned);
-    } catch (error) {
-      console.error('Failed to load pinned lists:', error);
+      console.error('❌ Failed to load lists:', error);
     }
   };
 
@@ -106,7 +91,6 @@ export default function OverviewScreen({
     setRefreshing(true);
     await loadTasks();
     await loadLists();
-    await loadPinnedLists();
     setRefreshing(false);
   };
   
@@ -179,7 +163,7 @@ export default function OverviewScreen({
       
       // If no list selected, get or create Unsorted
       if (!listId) {
-        console.log('ðŸ” No list selected, calling getOrCreateUnsortedList...');
+        console.log('🔍 No list selected, calling getOrCreateUnsortedList...');
         const unsortedList = await getOrCreateUnsortedList();
         listId = unsortedList.id;
         console.log('✅ Unsorted list obtained:', {
@@ -190,7 +174,7 @@ export default function OverviewScreen({
           deleted_at: unsortedList.deleted_at,
         });
       } else {
-        console.log('ðŸ“ Using selected list:', selectedList?.name);
+        console.log('📁 Using selected list:', selectedList?.name);
       }
       
       if (entryType === 'task') {
@@ -221,7 +205,7 @@ export default function OverviewScreen({
         });
       }
       
-      console.log(`ðŸ“ Creating ${entryType} with list_id: ${listId}`);
+      console.log(`📝 Creating ${entryType} with list_id: ${listId}`);
       
       handleCloseModal();
       await loadTasks();
@@ -229,7 +213,7 @@ export default function OverviewScreen({
       
       console.log('✅ Entry created, screens refreshed');
     } catch (error) {
-      console.error('âŒ Failed to create entry:', error);
+      console.error('❌ Failed to create entry:', error);
       Alert.alert('Error', 'Unable to create entry. Please try again.');
     }
   };
@@ -296,9 +280,9 @@ export default function OverviewScreen({
             </Text>
             {grouped.overdue.slice(0, 3).map(renderTaskPreview)}
             {grouped.overdue.length > 3 && (
-              <TouchableOpacity style={styles.viewAllButton} onPress={onViewTasks}>
+              <TouchableOpacity style={styles.viewAllButton} onPress={goToTasks}>
                 <Text style={styles.viewAllText}>
-                  View all {grouped.overdue.length} overdue â†’
+                  View all {grouped.overdue.length} overdue →
                 </Text>
               </TouchableOpacity>
             )}
@@ -313,9 +297,9 @@ export default function OverviewScreen({
             </Text>
             {grouped.today.slice(0, 5).map(renderTaskPreview)}
             {grouped.today.length > 5 && (
-              <TouchableOpacity style={styles.viewAllButton} onPress={onViewTasks}>
+              <TouchableOpacity style={styles.viewAllButton} onPress={goToTasks}>
                 <Text style={styles.viewAllText}>
-                  View all {grouped.today.length} tasks â†’
+                  View all {grouped.today.length} tasks →
                 </Text>
               </TouchableOpacity>
             )}
@@ -335,14 +319,12 @@ export default function OverviewScreen({
             </Text>
             {grouped.upcoming.slice(0, 3).map(renderTaskPreview)}
             {grouped.upcoming.length > 3 && (
-              <TouchableOpacity style={styles.viewAllButton} onPress={onViewTasks}>
-                <Text style={styles.viewAllText}>View all upcoming â†’</Text>
+              <TouchableOpacity style={styles.viewAllButton} onPress={goToTasks}>
+                <Text style={styles.viewAllText}>View all upcoming →</Text>
               </TouchableOpacity>
             )}
           </View>
         )}
-
-
 
         {/* Hints */}
         {grouped.no_date.length > 0 && (
@@ -362,36 +344,6 @@ export default function OverviewScreen({
             </Text>
           </View>
         )}
-
-
-        {/* Pinned Lists */}
-        {pinnedLists.length > 0 ? (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              📌 Pinned Lists ({pinnedLists.length})
-            </Text>
-            {pinnedLists.map(list => (
-              <TouchableOpacity
-                key={list.id}
-                style={styles.pinnedListRow}
-                onPress={() => goToLists(list.id)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.pinnedListIcon}>{list.icon || '📋'}</Text>
-                <Text style={styles.pinnedListName}>{list.name}</Text>
-                <Text style={styles.chevron}>›</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        ) : (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>📌 Pinned Lists</Text>
-            <Text style={styles.emptyMessage}>
-              No pinned lists yet. Long-press a list in the Lists tab to pin it.
-            </Text>
-          </View>
-        )}
-
 
         {tasks.length === 0 && (
           <View style={styles.emptyContainer}>
@@ -481,7 +433,7 @@ export default function OverviewScreen({
                       onPress={() => setListPickerVisible(true)}
                     >
                       <Text style={styles.listPickerButtonText}>
-                        {selectedList ? `ðŸ“ ${selectedList.name}` : '+ Add to List (optional)'}
+                        {selectedList ? `📁 ${selectedList.name}` : '+ Add to List (optional)'}
                       </Text>
                     </TouchableOpacity>
 
@@ -590,7 +542,7 @@ export default function OverviewScreen({
                       style={styles.backButton}
                       onPress={handleBackToEntry}
                     >
-                      <Text style={styles.backButtonText}>â† Back</Text>
+                      <Text style={styles.backButtonText}>← Back</Text>
                     </TouchableOpacity>
 
                     <Text style={styles.modalTitle}>New List</Text>
@@ -714,27 +666,6 @@ const styles = StyleSheet.create({
     borderLeftColor: '#ef4444',
   },
   sectionTitle: { fontSize: 14, fontWeight: '700', marginBottom: 12 },
-  pinnedListRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
-  },
-  pinnedListIcon: {
-    fontSize: 20,
-    marginRight: 12,
-  },
-  pinnedListName: {
-    flex: 1,
-    fontSize: 16,
-    color: '#1a1a1a',
-    fontWeight: '500',
-  },
-  chevron: {
-    fontSize: 20,
-    color: '#9ca3af',
-  },
   taskPreview: {
     paddingVertical: 8,
     borderBottomWidth: 1,

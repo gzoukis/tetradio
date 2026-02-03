@@ -194,9 +194,9 @@ export default function TasksScreen({ goToLists }: { goToLists: () => void }) {
                 'Set Priority',
                 'Choose priority level',
                 [
-                  { text: '🔵 Focus', onPress: () => handleSetPriority(task, 1) },
-                  { text: '⚪ Normal', onPress: () => handleSetPriority(task, 2) },
-                  { text: '⚫ Low key', onPress: () => handleSetPriority(task, 3) },
+                  { text: 'ðŸ”µ Focus', onPress: () => handleSetPriority(task, 1) },
+                  { text: 'âšª Normal', onPress: () => handleSetPriority(task, 2) },
+                  { text: 'âš« Low key', onPress: () => handleSetPriority(task, 3) },
                 ],
                 { cancelable: true }
               );
@@ -259,7 +259,7 @@ export default function TasksScreen({ goToLists }: { goToLists: () => void }) {
           delayLongPress={500}
         >
           <View style={[styles.checkbox, item.completed && styles.checkboxChecked]}>
-            {item.completed && <Text style={styles.checkmark}>✓</Text>}
+            {item.completed && <Text style={styles.checkmark}>âœ“</Text>}
           </View>
 
           <View style={styles.taskContent}>
@@ -329,7 +329,7 @@ export default function TasksScreen({ goToLists }: { goToLists: () => void }) {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>Loading…</Text>
+        <Text style={styles.loadingText}>Loadingâ€¦</Text>
       </View>
     );
   }

@@ -24,10 +24,10 @@ type EntryType = 'task' | 'note' | 'checklist';
 type QuickCreateMode = 'entry' | 'new-list';
 
 export default function OverviewScreen({
-  onViewTasks,
+  goToTasks,
   goToLists,
 }: {
-  onViewTasks: () => void;
+  goToTasks: () => void;
   goToLists: (listId?: string) => void;
 }) {
   const [tasks, setTasks] = useState<TaskWithListName[]>([]);
@@ -288,82 +288,6 @@ export default function OverviewScreen({
         <Text style={styles.pageTitle}>Overview</Text>
         <Text style={styles.pageSubtitle}>Your tasks at a glance</Text>
 
-        {/* Overdue */}
-        {grouped.overdue.length > 0 && (
-          <View style={[styles.section, styles.sectionOverdue]}>
-            <Text style={styles.sectionTitle}>
-              ⚠️ Overdue ({grouped.overdue.length})
-            </Text>
-            {grouped.overdue.slice(0, 3).map(renderTaskPreview)}
-            {grouped.overdue.length > 3 && (
-              <TouchableOpacity style={styles.viewAllButton} onPress={onViewTasks}>
-                <Text style={styles.viewAllText}>
-                  View all {grouped.overdue.length} overdue â†’
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
-
-        {/* Today */}
-        {grouped.today.length > 0 ? (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              Today ({grouped.today.length})
-            </Text>
-            {grouped.today.slice(0, 5).map(renderTaskPreview)}
-            {grouped.today.length > 5 && (
-              <TouchableOpacity style={styles.viewAllButton} onPress={onViewTasks}>
-                <Text style={styles.viewAllText}>
-                  View all {grouped.today.length} tasks â†’
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        ) : (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Today</Text>
-            <Text style={styles.emptyMessage}>Nothing due today</Text>
-          </View>
-        )}
-
-        {/* Upcoming */}
-        {grouped.upcoming.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              Upcoming ({grouped.upcoming.length})
-            </Text>
-            {grouped.upcoming.slice(0, 3).map(renderTaskPreview)}
-            {grouped.upcoming.length > 3 && (
-              <TouchableOpacity style={styles.viewAllButton} onPress={onViewTasks}>
-                <Text style={styles.viewAllText}>View all upcoming â†’</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
-
-
-
-        {/* Hints */}
-        {grouped.no_date.length > 0 && (
-          <View style={styles.hintSection}>
-            <Text style={styles.hintText}>
-              📋 {grouped.no_date.length} task
-              {grouped.no_date.length === 1 ? '' : 's'} without a due date
-            </Text>
-          </View>
-        )}
-
-        {grouped.completed.length > 0 && (
-          <View style={styles.hintSection}>
-            <Text style={styles.hintText}>
-              ✓ {grouped.completed.length} completed task
-              {grouped.completed.length === 1 ? '' : 's'}
-            </Text>
-          </View>
-        )}
-
-
         {/* Pinned Lists */}
         {pinnedLists.length > 0 ? (
           <View style={styles.section}>
@@ -392,6 +316,78 @@ export default function OverviewScreen({
           </View>
         )}
 
+        {/* Overdue */}
+        {grouped.overdue.length > 0 && (
+          <View style={[styles.section, styles.sectionOverdue]}>
+            <Text style={styles.sectionTitle}>
+              ⚠️ Overdue ({grouped.overdue.length})
+            </Text>
+            {grouped.overdue.slice(0, 3).map(renderTaskPreview)}
+            {grouped.overdue.length > 3 && (
+              <TouchableOpacity style={styles.viewAllButton} onPress={goToTasks}>
+                <Text style={styles.viewAllText}>
+                  View all {grouped.overdue.length} overdue â†’
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
+        {/* Today */}
+        {grouped.today.length > 0 ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>
+              Today ({grouped.today.length})
+            </Text>
+            {grouped.today.slice(0, 5).map(renderTaskPreview)}
+            {grouped.today.length > 5 && (
+              <TouchableOpacity style={styles.viewAllButton} onPress={goToTasks}>
+                <Text style={styles.viewAllText}>
+                  View all {grouped.today.length} tasks â†’
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        ) : (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Today</Text>
+            <Text style={styles.emptyMessage}>Nothing due today</Text>
+          </View>
+        )}
+
+        {/* Upcoming */}
+        {grouped.upcoming.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>
+              Upcoming ({grouped.upcoming.length})
+            </Text>
+            {grouped.upcoming.slice(0, 3).map(renderTaskPreview)}
+            {grouped.upcoming.length > 3 && (
+              <TouchableOpacity style={styles.viewAllButton} onPress={goToTasks}>
+                <Text style={styles.viewAllText}>View all upcoming â†’</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
+        {/* Hints */}
+        {grouped.no_date.length > 0 && (
+          <View style={styles.hintSection}>
+            <Text style={styles.hintText}>
+              📋 {grouped.no_date.length} task
+              {grouped.no_date.length === 1 ? '' : 's'} without a due date
+            </Text>
+          </View>
+        )}
+
+        {grouped.completed.length > 0 && (
+          <View style={styles.hintSection}>
+            <Text style={styles.hintText}>
+              ✓ {grouped.completed.length} completed task
+              {grouped.completed.length === 1 ? '' : 's'}
+            </Text>
+          </View>
+        )}
 
         {tasks.length === 0 && (
           <View style={styles.emptyContainer}>

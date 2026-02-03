@@ -143,11 +143,13 @@ export default function ListsScreen() {
     setSelectedList(list);
   };
 
-  const handleBackToLists = () => {
+  const handleBackToLists = async () => {
     setSelectedList(null);
     setEntries([]);
     setEditingEntryId(null);
     setEditingEntryTitle('');
+    // Refresh lists to reflect any archive changes
+    await loadLists();
   };
 
   const loadEntries = async (listId: string) => {

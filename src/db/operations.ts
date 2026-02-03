@@ -11,7 +11,7 @@ export interface TaskWithListName extends Task {
 
 /**
  * Get all tasks for a specific list
- * Returns tasks sorted by: completed status → priority → created date
+ * Returns tasks sorted by: completed status â†’ priority â†’ created date
  * 
  * VERSION 2: Updated to query entries table with type filter
  */
@@ -51,7 +51,7 @@ export async function getAllLists(): Promise<List[]> {
     'SELECT * FROM lists WHERE deleted_at IS NULL ORDER BY sort_order ASC'
   );
 
-  console.log(`🔍 getAllLists returned ${rows.length} rows from database`);
+  console.log(`ðŸ” getAllLists returned ${rows.length} rows from database`);
   rows.forEach(row => {
     console.log(`  - ${row.icon || '?'} ${row.name} [is_system=${row.is_system}, deleted_at=${row.deleted_at}]`);
   });
@@ -734,7 +734,7 @@ export async function deleteChecklistItem(itemId: string): Promise<void> {
  * TICKET 9B: Quick Create from Overview
  * 
  * Auto-creates a system list for entries without an assigned list.
- * Properties: name='Unsorted', icon='📥', is_system=true, sort_order=9999
+ * Properties: name='Unsorted', icon='ðŸ“¥', is_system=true, sort_order=9999
  */
 export async function getOrCreateUnsortedList(): Promise<List> {
   const db = await getDatabase();
@@ -749,7 +749,7 @@ export async function getOrCreateUnsortedList(): Promise<List> {
   if (existing) {
     // If it's archived, un-archive it (user is adding an entry)
     if (existing.is_archived === 1) {
-      console.log('📥 Un-archiving Unsorted list (new entry being added)');
+      console.log('ðŸ“¥ Un-archiving Unsorted list (new entry being added)');
       const now = Date.now();
       await db.runAsync(
         'UPDATE lists SET is_archived = 0, updated_at = ? WHERE id = ?',
@@ -790,7 +790,7 @@ export async function getOrCreateUnsortedList(): Promise<List> {
   const id = Crypto.randomUUID();
   const now = Date.now();
   
-  console.log('📥 Creating new Unsorted list');
+  console.log('ðŸ“¥ Creating new Unsorted list');
   await db.runAsync(
     `INSERT INTO lists (
       id, name, icon, color_hint, sort_order, is_pinned, is_archived, is_system, 
@@ -799,7 +799,7 @@ export async function getOrCreateUnsortedList(): Promise<List> {
     [
       id,
       'Unsorted',
-      '📥',
+      'ðŸ“¥',
       '#9ca3af',
       9999,
       0,
@@ -813,7 +813,7 @@ export async function getOrCreateUnsortedList(): Promise<List> {
   return {
     id,
     name: 'Unsorted',
-    icon: '📥',
+    icon: 'ðŸ“¥',
     color_hint: '#9ca3af',
     sort_order: 9999,
     is_pinned: false,
@@ -890,7 +890,7 @@ export async function unarchiveList(listId: string): Promise<void> {
   const db = await getDatabase();
   const now = Date.now();
   
-  console.log('📥 Un-archiving list:', listId);
+  console.log('ðŸ“¥ Un-archiving list:', listId);
   await db.runAsync(
     'UPDATE lists SET is_archived = 0, updated_at = ? WHERE id = ?',
     [now, listId]
@@ -907,7 +907,7 @@ export async function archiveList(listId: string): Promise<void> {
   const db = await getDatabase();
   const now = Date.now();
   
-  console.log('📦 Archiving list:', listId);
+  console.log('ðŸ“¦ Archiving list:', listId);
   await db.runAsync(
     'UPDATE lists SET is_archived = 1, updated_at = ? WHERE id = ?',
     [now, listId]
@@ -944,15 +944,92 @@ export async function cleanupUnsortedListIfEmpty(): Promise<void> {
     
     if (entryCount && entryCount.count === 0) {
       // No entries left - archive the Unsorted list
-      console.log('🗑️ Unsorted list is empty, archiving...');
+      console.log('ðŸ—‘ï¸ Unsorted list is empty, archiving...');
       await db.runAsync(
         'UPDATE lists SET is_archived = 1, updated_at = ? WHERE id = ?',
         [Date.now(), unsortedList.id]
       );
-      console.log('✅ Unsorted list archived');
+      console.log('âœ… Unsorted list archived');
     }
   } catch (error) {
-    console.error('❌ Failed to cleanup Unsorted list:', error);
+    console.error('âŒ Failed to cleanup Unsorted list:', error);
   }
 }
 
+/**
+ * Move an entry to a different list
+ * 
+ * TICKET 9D: Move Items Between Lists
+ * 
+ * Generic operation that works for all entry types (Task, Note, Checklist).
+ * Automatically triggers Unsorted cleanup if source list was Unsorted.
+ * 
+ * @param entryId - The ID of the entry to move
+ * @param newListId - The ID of the destination list
+ * @param sourceListId - Optional: The ID of the source list (for Unsorted cleanup)
+ */
+export async function moveEntryToList(input: {
+  entryId: string;
+  newListId: string;
+  sourceListId?: string;
+}): Promise<void> {
+  const db = await getDatabase();
+  const now = Date.now();
+  
+  try {
+    // Update the entry's list_id
+    await db.runAsync(
+      `UPDATE entries 
+       SET list_id = ?, updated_at = ? 
+       WHERE id = ? AND deleted_at IS NULL`,
+      [input.newListId, now, input.entryId]
+    );
+    
+    console.log(`📦 Moved entry ${input.entryId} to list ${input.newListId}`);
+    
+    // If source was Unsorted, check if it needs cleanup
+    if (input.sourceListId) {
+      const sourceList = await db.getFirstAsync<{ is_system: number }>(
+        'SELECT is_system FROM lists WHERE id = ? AND deleted_at IS NULL',
+        [input.sourceListId]
+      );
+      
+      if (sourceList && sourceList.is_system === 1) {
+        console.log('🔍 Source was Unsorted, checking cleanup...');
+        await cleanupUnsortedListIfEmpty();
+      }
+    }
+  } catch (error) {
+    console.error('❌ Failed to move entry:', error);
+    throw error;
+  }
+}
+
+/**
+ * Toggle pin status for a list
+ * 
+ * TICKET 10: Pinned Lists
+ * 
+ * Defense-in-depth: SQL-level WHERE clause prevents pinning system lists (Unsorted)
+ * UI also prevents showing pin controls for system lists
+ * 
+ * @param listId - List to pin/unpin
+ * @param isPinned - New pin state (true = pinned, false = unpinned)
+ */
+export async function toggleListPin(listId: string, isPinned: boolean): Promise<void> {
+  const db = await getDatabase();
+  const now = Date.now();
+  
+  try {
+    // SQL-level defense: Only allow pinning non-system lists
+    await db.runAsync(
+      'UPDATE lists SET is_pinned = ?, updated_at = ? WHERE id = ? AND is_system = 0',
+      [isPinned ? 1 : 0, now, listId]
+    );
+    
+    console.log(`📌 List ${listId} ${isPinned ? 'pinned' : 'unpinned'}`);
+  } catch (error) {
+    console.error('❌ Failed to toggle list pin:', error);
+    throw error;
+  }
+}

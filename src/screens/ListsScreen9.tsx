@@ -16,8 +16,9 @@ import {
   Platform,
   RefreshControl,
   ActionSheetIOS,
+  ScrollView,
 } from 'react-native';
-import { getAllLists, createList, deleteList } from '../db/operations';
+import { getAllLists, createList, deleteList, getActiveEntriesCountByListId, archiveList, moveEntryToList } from '../db/operations';
 import { getTasksByListId, createTask, deleteTask, updateTask } from '../db/operations';
 import { getNotesByListId, createNote, deleteNote, updateNote } from '../db/operations';
 import { getChecklistsByListId, createChecklist, createChecklistWithItems, deleteChecklist } from '../db/operations';
@@ -25,6 +26,7 @@ import type { List, Task, Note, ChecklistWithStats } from '../types/models';
 import { getPriorityLabel, getPriorityStyle } from '../utils/formatting';
 
 type ListEntry = Task | Note | ChecklistWithStats;
+type MoveModalMode = 'select-list' | 'new-list';
 
 export default function ListsScreen() {
   const [lists, setLists] = useState<List[]>([]);
@@ -54,6 +56,14 @@ export default function ListsScreen() {
   const [selectedChecklist, setSelectedChecklist] = useState<ChecklistWithStats | null>(null);
 
   const [refreshing, setRefreshing] = useState(false);
+
+  // TICKET 9D: Move to List state
+  const [moveModalVisible, setMoveModalVisible] = useState(false);
+  const [moveModalMode, setMoveModalMode] = useState<MoveModalMode>('select-list');
+  const [entryToMove, setEntryToMove] = useState<ListEntry | null>(null);
+  const [moveTargetList, setMoveTargetList] = useState<List | null>(null);
+  const [moveNewListName, setMoveNewListName] = useState('');
+  const [availableListsForMove, setAvailableListsForMove] = useState<List[]>([]);
 
   useEffect(() => {
     loadLists();
@@ -143,11 +153,13 @@ export default function ListsScreen() {
     setSelectedList(list);
   };
 
-  const handleBackToLists = () => {
+  const handleBackToLists = async () => {
     setSelectedList(null);
     setEntries([]);
     setEditingEntryId(null);
     setEditingEntryTitle('');
+    // Refresh lists to reflect any archive changes
+    await loadLists();
   };
 
   const loadEntries = async (listId: string) => {
@@ -217,7 +229,6 @@ export default function ListsScreen() {
           list_id: selectedList.id,
           due_date: newTaskDueDate,
           calm_priority: newTaskPriority,
-          completed: false,
         });
       } else if (entryType === 'note') {
         await createNote({
@@ -253,11 +264,38 @@ export default function ListsScreen() {
     }
 
     try {
+      const wasCompleted = task.completed;
+      const isUnsorted = selectedList?.name === 'Unsorted';
+      
       await updateTask({
         id: task.id,
         completed: !task.completed,
         completed_at: !task.completed ? Date.now() : undefined,
       });
+      
+      // Special handling for Unsorted tasks
+      if (isUnsorted && !wasCompleted && selectedList) {
+        // Just completed an Unsorted task
+        console.log('🔍 Checking if Unsorted should be archived...');
+        
+        // Reload entries to get fresh data
+        await loadEntries(selectedList.id);
+        
+        // Check if any active (not completed, not deleted) items remain
+        const activeCount = await getActiveEntriesCountByListId(selectedList.id);
+        console.log(`📊 Active entries in Unsorted: ${activeCount}`);
+        
+        if (activeCount === 0) {
+          // No active items left - archive Unsorted and navigate back
+          console.log('📦 Last Unsorted item completed, archiving list and navigating back');
+          await archiveList(selectedList.id);
+          handleBackToLists();
+          return;
+        } else {
+          console.log(`✅ Unsorted list still has ${activeCount} active items, keeping visible`);
+        }
+      }
+      
       if (selectedList) {
         await loadEntries(selectedList.id);
       }
@@ -271,12 +309,14 @@ export default function ListsScreen() {
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
         {
-          options: ['Cancel', 'Change Priority', 'Delete Task'],
-          destructiveButtonIndex: 2,
+          options: ['Cancel', 'Move to List', 'Change Priority', 'Delete Task'],
+          destructiveButtonIndex: 3,
           cancelButtonIndex: 0,
         },
         (buttonIndex) => {
           if (buttonIndex === 1) {
+            handleOpenMoveModal(task);
+          } else if (buttonIndex === 2) {
             ActionSheetIOS.showActionSheetWithOptions(
               {
                 options: ['Cancel', 'Focus', 'Normal', 'Low key'],
@@ -288,7 +328,7 @@ export default function ListsScreen() {
                 else if (priorityIndex === 3) handleSetPriority(task, 3);
               }
             );
-          } else if (buttonIndex === 2) {
+          } else if (buttonIndex === 3) {
             handleDeleteEntry(task);
           }
         }
@@ -303,6 +343,10 @@ export default function ListsScreen() {
             text: 'Delete Task', 
             onPress: () => handleDeleteEntry(task),
             style: 'destructive'
+          },
+          { 
+            text: 'Move to List', 
+            onPress: () => handleOpenMoveModal(task)
           },
           { 
             text: 'Change Priority', 
@@ -341,35 +385,77 @@ export default function ListsScreen() {
   };
 
   const handleNoteLongPress = (note: Note) => {
-    Alert.alert(
-      note.title,
-      'What would you like to do?',
-      [
-        { text: 'Cancel', style: 'cancel' },
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
         {
-          text: 'Delete Note',
-          onPress: () => handleDeleteEntry(note),
-          style: 'destructive',
+          options: ['Cancel', 'Move to List', 'Delete Note'],
+          destructiveButtonIndex: 2,
+          cancelButtonIndex: 0,
         },
-      ],
-      { cancelable: true }
-    );
+        (buttonIndex) => {
+          if (buttonIndex === 1) {
+            handleOpenMoveModal(note);
+          } else if (buttonIndex === 2) {
+            handleDeleteEntry(note);
+          }
+        }
+      );
+    } else {
+      Alert.alert(
+        note.title,
+        'What would you like to do?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete Note',
+            onPress: () => handleDeleteEntry(note),
+            style: 'destructive',
+          },
+          {
+            text: 'Move to List',
+            onPress: () => handleOpenMoveModal(note),
+          },
+        ],
+        { cancelable: true }
+      );
+    }
   };
 
   const handleChecklistLongPress = (checklist: ChecklistWithStats) => {
-    Alert.alert(
-      checklist.title,
-      'What would you like to do?',
-      [
-        { text: 'Cancel', style: 'cancel' },
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
         {
-          text: 'Delete Checklist',
-          onPress: () => handleDeleteEntry(checklist),
-          style: 'destructive',
+          options: ['Cancel', 'Move to List', 'Delete Checklist'],
+          destructiveButtonIndex: 2,
+          cancelButtonIndex: 0,
         },
-      ],
-      { cancelable: true }
-    );
+        (buttonIndex) => {
+          if (buttonIndex === 1) {
+            handleOpenMoveModal(checklist);
+          } else if (buttonIndex === 2) {
+            handleDeleteEntry(checklist);
+          }
+        }
+      );
+    } else {
+      Alert.alert(
+        checklist.title,
+        'What would you like to do?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete Checklist',
+            onPress: () => handleDeleteEntry(checklist),
+            style: 'destructive',
+          },
+          {
+            text: 'Move to List',
+            onPress: () => handleOpenMoveModal(checklist),
+          },
+        ],
+        { cancelable: true }
+      );
+    }
   };
 
   const handleSaveNote = async (title: string, body: string) => {
@@ -484,6 +570,118 @@ export default function ListsScreen() {
     }
   };
 
+  // TICKET 9D: Move to List handlers
+  const handleOpenMoveModal = async (entry: ListEntry) => {
+    setEntryToMove(entry);
+    setMoveModalMode('select-list');
+    setMoveTargetList(null);
+    setMoveNewListName('');
+
+    // Load available lists (exclude current list and Unsorted)
+    try {
+      const allLists = await getAllLists();
+      const available = allLists.filter(list => 
+        !list.is_archived && 
+        !list.is_system && 
+        list.id !== selectedList?.id
+      );
+      setAvailableListsForMove(available);
+      setMoveModalVisible(true);
+    } catch (error) {
+      console.error('Failed to load lists for move:', error);
+      Alert.alert('Error', 'Unable to load lists. Please try again.');
+    }
+  };
+
+  const handleCloseMoveModal = () => {
+    setMoveModalVisible(false);
+    setEntryToMove(null);
+    setMoveTargetList(null);
+    setMoveNewListName('');
+    setMoveModalMode('select-list');
+  };
+
+  const handleSwitchToNewListMode = () => {
+    setMoveModalMode('new-list');
+  };
+
+  const handleBackToSelectList = () => {
+    setMoveModalMode('select-list');
+  };
+
+  const handleCreateNewListForMove = async () => {
+    const trimmedName = moveNewListName.trim();
+    if (!trimmedName) {
+      Alert.alert('Empty Name', 'Please enter a list name.');
+      return;
+    }
+
+    try {
+      const newList = await createList({
+        name: trimmedName,
+        sort_order: lists.length,
+        is_pinned: false,
+        is_archived: false,
+      });
+
+      // Add to available lists
+      setAvailableListsForMove([...availableListsForMove, newList]);
+      
+      // Select the new list
+      setMoveTargetList(newList);
+      
+      // Switch back to select mode
+      setMoveNewListName('');
+      setMoveModalMode('select-list');
+      
+      // Refresh main lists
+      await loadLists();
+    } catch (error) {
+      console.error('Failed to create list:', error);
+      Alert.alert('Error', 'Unable to create list. Please try again.');
+    }
+  };
+
+  const handleConfirmMove = async () => {
+    if (!entryToMove || !moveTargetList) return;
+
+    try {
+      await moveEntryToList({
+        entryId: entryToMove.id,
+        newListId: moveTargetList.id,
+        sourceListId: selectedList?.id,
+      });
+
+      console.log(`✅ Moved ${entryToMove.type} to ${moveTargetList.name}`);
+
+      // Close modal
+      handleCloseMoveModal();
+
+      // Reload current list
+      if (selectedList) {
+        await loadEntries(selectedList.id);
+        
+        // If list is now empty and is Unsorted, it will be archived
+        // Check if we should navigate back
+        const remainingEntries = entries.filter(e => e.id !== entryToMove.id);
+        if (selectedList.name === 'Unsorted' && remainingEntries.length === 0) {
+          // Unsorted will be archived, navigate back
+          await handleBackToLists();
+        }
+      }
+
+      // Refresh lists (in case Unsorted was archived)
+      await loadLists();
+
+      // Show success message
+      const entryTypeLabel = entryToMove.type === 'task' ? 'Task' : entryToMove.type === 'note' ? 'Note' : 'Checklist';
+      Alert.alert('Moved', `${entryTypeLabel} moved to ${moveTargetList.name}`);
+    } catch (error) {
+      console.error('Failed to move entry:', error);
+      Alert.alert('Error', 'Unable to move item. Please try again.');
+    }
+  };
+
   const renderList = ({ item }: { item: List }) => (
     <TouchableOpacity
       style={styles.listRow}
@@ -496,7 +694,7 @@ export default function ListsScreen() {
       </View>
       <View style={styles.listContent}>
         <Text style={styles.listName}>{item.name}</Text>
-        <Text style={styles.listSubtext}>Tap to open &bull; Long-press to delete</Text>
+        <Text style={styles.listSubtext}>Tap to open • Long-press to delete</Text>
       </View>
     </TouchableOpacity>
   );
@@ -636,7 +834,7 @@ export default function ListsScreen() {
           onPress={handleBackToLists}
           activeOpacity={0.7}
         >
-          <Text style={styles.backButtonText}>&lsaquo; Back</Text>
+          <Text style={styles.backButtonText}>‹ Back</Text>
         </TouchableOpacity>
         <View style={styles.detailHeaderContent}>
           <Text style={styles.detailHeaderIcon}>{selectedList?.icon || '📋'}</Text>
@@ -646,7 +844,7 @@ export default function ListsScreen() {
 
       {loadingEntries ? (
         <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Loadingâ€¦</Text>
+          <Text style={styles.loadingText}>Loading…</Text>
         </View>
       ) : (
         <FlatList
@@ -713,6 +911,7 @@ export default function ListsScreen() {
       <>
         {renderListDetail()}
 
+        {/* Entry Creation Modal */}
         <Modal
           visible={entryModalVisible}
           animationType="slide"
@@ -913,6 +1112,124 @@ export default function ListsScreen() {
             </TouchableOpacity>
           </KeyboardAvoidingView>
         </Modal>
+
+        {/* TICKET 9D: Move to List Modal */}
+        <Modal
+          visible={moveModalVisible}
+          animationType="slide"
+          transparent
+          onRequestClose={handleCloseMoveModal}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={handleCloseMoveModal}
+          >
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={e => e.stopPropagation()}
+            >
+              <View style={styles.listPickerContent}>
+                {moveModalMode === 'select-list' ? (
+                  <>
+                    <Text style={styles.listPickerTitle}>Move to List</Text>
+                    
+                    {/* New List option */}
+                    <TouchableOpacity
+                      style={styles.listPickerItem}
+                      onPress={handleSwitchToNewListMode}
+                    >
+                      <Text style={[styles.listPickerItemText, styles.newListOption]}>➕ New List</Text>
+                    </TouchableOpacity>
+                    
+                    {/* Existing lists */}
+                    <ScrollView style={styles.listPickerScroll}>
+                      {availableListsForMove.map(list => (
+                        <TouchableOpacity
+                          key={list.id}
+                          style={[
+                            styles.listPickerItem,
+                            moveTargetList?.id === list.id && styles.listPickerItemSelected,
+                          ]}
+                          onPress={() => setMoveTargetList(list)}
+                        >
+                          <Text style={styles.listPickerItemText}>
+                            {list.icon || '📋'} {list.name}
+                          </Text>
+                          {moveTargetList?.id === list.id && (
+                            <Text style={styles.selectedCheck}>✓</Text>
+                          )}
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                    
+                    <View style={styles.moveModalButtons}>
+                      <TouchableOpacity
+                        style={styles.listPickerCancelButton}
+                        onPress={handleCloseMoveModal}
+                      >
+                        <Text style={styles.listPickerCancelText}>Cancel</Text>
+                      </TouchableOpacity>
+                      
+                      <TouchableOpacity
+                        style={[
+                          styles.moveConfirmButton,
+                          !moveTargetList && styles.buttonDisabled,
+                        ]}
+                        onPress={handleConfirmMove}
+                        disabled={!moveTargetList}
+                      >
+                        <Text style={styles.moveConfirmText}>Move</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    {/* New List Creation Mode */}
+                    <TouchableOpacity
+                      style={styles.backButton}
+                      onPress={handleBackToSelectList}
+                    >
+                      <Text style={styles.backButtonText}>← Back</Text>
+                    </TouchableOpacity>
+
+                    <Text style={styles.listPickerTitle}>New List</Text>
+
+                    <TextInput
+                      style={styles.input}
+                      placeholder="List name"
+                      value={moveNewListName}
+                      onChangeText={setMoveNewListName}
+                      autoFocus
+                      returnKeyType="done"
+                      onSubmitEditing={handleCreateNewListForMove}
+                    />
+
+                    <View style={styles.moveModalButtons}>
+                      <TouchableOpacity
+                        style={styles.listPickerCancelButton}
+                        onPress={handleBackToSelectList}
+                      >
+                        <Text style={styles.listPickerCancelText}>Cancel</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[
+                          styles.moveConfirmButton,
+                          !moveNewListName.trim() && styles.buttonDisabled,
+                        ]}
+                        onPress={handleCreateNewListForMove}
+                        disabled={!moveNewListName.trim()}
+                      >
+                        <Text style={styles.moveConfirmText}>Create</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                )}
+              </View>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
       </>
     );
   }
@@ -921,7 +1238,7 @@ export default function ListsScreen() {
     <View style={styles.container}>
       {loading ? (
         <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Loadingâ€¦</Text>
+          <Text style={styles.loadingText}>Loading…</Text>
         </View>
       ) : (
         <>
@@ -1284,4 +1601,52 @@ const styles = StyleSheet.create({
     color: '#3b82f6',
     fontWeight: '600',
   },
+  // Move to List Modal styles
+  listPickerContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    maxHeight: '75%', // Allow more space
+    minHeight: 400, // Ensure at least 3 lists visible comfortably
+  },
+  listPickerTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 16 },
+  listPickerScroll: { maxHeight: 300 },
+  listPickerItem: {
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  listPickerItemSelected: {
+    backgroundColor: '#eff6ff',
+  },
+  listPickerItemText: { fontSize: 16, color: '#1a1a1a' },
+  newListOption: { color: '#3b82f6', fontWeight: '600' },
+  selectedCheck: { fontSize: 18, color: '#3b82f6', fontWeight: 'bold' },
+  listPickerCancelButton: {
+    flex: 1,
+    paddingVertical: 14,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 8,
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  listPickerCancelText: { color: '#6b7280', fontSize: 16, fontWeight: '600' },
+  moveModalButtons: {
+    flexDirection: 'row',
+    marginTop: 16,
+  },
+  moveConfirmButton: {
+    flex: 1,
+    paddingVertical: 14,
+    backgroundColor: '#3b82f6',
+    borderRadius: 8,
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  moveConfirmText: { color: '#fff', fontSize: 16, fontWeight: '600' },
 });
