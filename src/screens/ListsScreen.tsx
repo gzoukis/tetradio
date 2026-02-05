@@ -7,8 +7,6 @@ import {
   View,
   Text,
   StyleSheet,
-  FlatList,
-  SectionList,
   TouchableOpacity,
   TextInput,
   Modal,
@@ -19,7 +17,8 @@ import {
   ActionSheetIOS,
   ScrollView,
 } from 'react-native';
-import { getAllLists, createList, deleteList, getActiveEntriesCountByListId, archiveList, moveEntryToList, toggleListPin } from '../db/operations';
+import DraggableFlatList, { RenderItemParams, ScaleDecorator } from 'react-native-draggable-flatlist';
+import { getAllLists, createList, deleteList, getActiveEntriesCountByListId, archiveList, moveEntryToList, toggleListPin, updateListSortOrders } from '../db/operations';
 import { getTasksByListId, createTask, deleteTask, updateTask } from '../db/operations';
 import { getNotesByListId, createNote, deleteNote, updateNote } from '../db/operations';
 import { getChecklistsByListId, createChecklist, createChecklistWithItems, deleteChecklist } from '../db/operations';
@@ -29,6 +28,11 @@ import { getPriorityLabel, getPriorityStyle } from '../utils/formatting';
 type ListEntry = Task | Note | ChecklistWithStats;
 type MoveModalMode = 'select-list' | 'new-list';
 
+// TICKET 11A: Flattened data model for drag & drop
+type FlatListItem = 
+  | { type: 'header'; title: string; id: string }
+  | { type: 'list'; data: List; id: string };
+
 export default function ListsScreen({
   initialListId,
   onListIdChange,
@@ -37,6 +41,7 @@ export default function ListsScreen({
   onListIdChange?: (listId: string | undefined) => void;
 }) {
   const [lists, setLists] = useState<List[]>([]);
+  const [flatData, setFlatData] = useState<FlatListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [newListName, setNewListName] = useState('');
@@ -105,6 +110,9 @@ export default function ListsScreen({
       });
       
       setLists(activeLists);
+      
+      // TICKET 11A: Build flattened data structure
+      buildFlatData(activeLists);
     } catch (error) {
       console.error('❌ ListsScreen: Failed to load lists:', error);
       Alert.alert('Error', 'Unable to load lists. Please try again.');
@@ -113,22 +121,40 @@ export default function ListsScreen({
     }
   };
 
-  const groupLists = (lists: List[]): { pinned: List[], unpinned: List[] } => {
-    // Separate pinned and unpinned, excluding system lists from both
-    const pinned = lists
+  // TICKET 11A: Build flattened data with synthetic headers
+  const buildFlatData = (allLists: List[]) => {
+    const pinned = allLists
       .filter(l => l.is_pinned && !l.is_system)
       .sort((a, b) => a.sort_order - b.sort_order);
     
-    const unpinned = lists
+    const unpinned = allLists
       .filter(l => !l.is_pinned && !l.is_system)
       .sort((a, b) => a.sort_order - b.sort_order);
     
-    // System lists (like Unsorted) appear at bottom with unpinned
-    const systemLists = lists
+    const systemLists = allLists
       .filter(l => l.is_system)
       .sort((a, b) => a.sort_order - b.sort_order);
     
-    return { pinned, unpinned: [...unpinned, ...systemLists] };
+    const flat: FlatListItem[] = [];
+    
+    if (pinned.length > 0) {
+      flat.push({ type: 'header', title: 'PINNED', id: 'header-pinned' });
+      pinned.forEach(list => {
+        flat.push({ type: 'list', data: list, id: list.id });
+      });
+    }
+    
+    if (unpinned.length > 0 || systemLists.length > 0) {
+      flat.push({ type: 'header', title: 'LISTS', id: 'header-lists' });
+      unpinned.forEach(list => {
+        flat.push({ type: 'list', data: list, id: list.id });
+      });
+      systemLists.forEach(list => {
+        flat.push({ type: 'list', data: list, id: list.id });
+      });
+    }
+    
+    setFlatData(flat);
   };
 
   const handleCreateList = async () => {
@@ -192,7 +218,8 @@ export default function ListsScreen({
     }
   };
 
-  const handleListLongPress = (list: List) => {
+  // TICKET 11A: Show action menu via ⋯ button
+  const handleShowActionMenu = (list: List) => {
     if (Platform.OS === 'ios') {
       const options = ['Cancel'];
       const actions: (() => void)[] = [];
@@ -289,6 +316,58 @@ export default function ListsScreen({
     setRefreshing(true);
     await loadEntries(selectedList.id);
     setRefreshing(false);
+  };
+
+  // TICKET 11A: Drag & drop handler
+  const handleDragEnd = async (params: { data: FlatListItem[]; from: number; to: number }) => {
+    const { data, from, to } = params;
+    
+    // If dropped in same position, no update needed
+    if (from === to) {
+      return;
+    }
+    
+    // Optimistically update UI
+    setFlatData(data);
+    
+    try {
+      // Extract lists and determine their new positions
+      const updates: { id: string; sort_order: number; is_pinned: boolean }[] = [];
+      
+      let currentSection: 'pinned' | 'unpinned' | null = null;
+      let positionInSection = 0;
+      
+      for (const item of data) {
+        if (item.type === 'header') {
+          currentSection = item.title === 'PINNED' ? 'pinned' : 'unpinned';
+          positionInSection = 0;
+        } else if (item.type === 'list' && !item.data.is_system) {
+          // System lists are never updated
+          const isPinned = currentSection === 'pinned';
+          
+          updates.push({
+            id: item.data.id,
+            sort_order: positionInSection,
+            is_pinned: isPinned,
+          });
+          
+          positionInSection++;
+        }
+      }
+      
+      // Persist to database
+      await updateListSortOrders(updates);
+      
+      // Reload to sync state
+      await loadLists();
+      
+    } catch (error) {
+      console.error('❌ Failed to persist drag order:', error);
+      Alert.alert('Error', 'Unable to save new order. Changes reverted.');
+      
+      // Revert to original order
+      await loadLists();
+    }
   };
 
   const handleAddChecklistItem = () => {
@@ -780,39 +859,65 @@ export default function ListsScreen({
     }
   };
 
-  const renderList = ({ item }: { item: List }) => (
-    <TouchableOpacity
-      style={styles.listRow}
-      onPress={() => handleSelectList(item)}
-      onLongPress={() => handleListLongPress(item)}
-      activeOpacity={0.7}
-    >
-      <View style={styles.listIcon}>
-        <Text style={styles.listIconText}>{item.icon || '📋'}</Text>
-        {item.is_pinned && !item.is_system && (
-          <View style={styles.pinBadge}>
-            <Text style={styles.pinBadgeText}>📌</Text>
+  // TICKET 11A: Render list row with drag support
+  const renderListRow = ({ item, drag, isActive }: RenderItemParams<FlatListItem>) => {
+    if (item.type === 'header') {
+      // Section headers - non-draggable, non-interactive
+      return (
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionHeaderText}>{item.title}</Text>
+        </View>
+      );
+    }
+    
+    const list = item.data;
+    const isDraggable = !list.is_system;
+    
+    return (
+      <ScaleDecorator>
+        <TouchableOpacity
+          style={[
+            styles.listRow,
+            isActive && styles.listRowDragging,
+          ]}
+          onPress={() => handleSelectList(list)}
+          onLongPress={isDraggable ? drag : undefined}
+          delayLongPress={isDraggable ? 300 : undefined}
+          activeOpacity={0.7}
+          disabled={isActive}
+        >
+          <View style={styles.listIcon}>
+            <Text style={styles.listIconText}>{list.icon || '📋'}</Text>
+            {list.is_pinned && !list.is_system && (
+              <View style={styles.pinBadge}>
+                <Text style={styles.pinBadgeText}>📌</Text>
+              </View>
+            )}
           </View>
-        )}
-      </View>
-      <View style={styles.listContent}>
-        <Text style={styles.listName}>{item.name}</Text>
-        <Text style={styles.listSubtext}>
-          Tap to open • Long-press for {!item.is_system ? 'options' : 'delete'}
-        </Text>
-      </View>
-    </TouchableOpacity>
-  );
-
-  const renderEmptyLists = () => (
-    <View style={styles.emptyContainer}>
-      <Text style={styles.emptyText}>No lists yet</Text>
-      <Text style={styles.emptySubtext}>
-        Lists help you organize related items.{'\n'}
-        Create a list like "Groceries" or "Work" to get started.
-      </Text>
-    </View>
-  );
+          <View style={styles.listContent}>
+            <Text style={styles.listName}>{list.name}</Text>
+            <Text style={styles.listSubtext}>
+              {isDraggable ? 'Long-press to reorder • ' : ''}Tap to open
+            </Text>
+          </View>
+          
+          {/* TICKET 11A: Action menu button (⋯) - only for user lists */}
+          {!list.is_system && (
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={(e) => {
+                e.stopPropagation();
+                handleShowActionMenu(list);
+              }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Text style={styles.actionButtonText}>⋯</Text>
+            </TouchableOpacity>
+          )}
+        </TouchableOpacity>
+      </ScaleDecorator>
+    );
+  };
 
   const renderEntry = ({ item }: { item: ListEntry }) => {
     if (item.type === 'note') {
@@ -921,6 +1026,16 @@ export default function ListsScreen({
     );
   };
 
+  const renderEmptyLists = () => (
+    <View style={styles.emptyContainer}>
+      <Text style={styles.emptyText}>No lists yet</Text>
+      <Text style={styles.emptySubtext}>
+        Lists help you organize related items.{'\n'}
+        Create a list like "Groceries" or "Work" to get started.
+      </Text>
+    </View>
+  );
+
   const renderEmptyEntries = () => (
     <View style={styles.emptyContainer}>
       <Text style={styles.emptyText}>Nothing here yet</Text>
@@ -952,12 +1067,8 @@ export default function ListsScreen({
           <Text style={styles.loadingText}>Loading…</Text>
         </View>
       ) : (
-        <FlatList
-          data={entries}
-          renderItem={renderEntry}
-          keyExtractor={item => item.id}
+        <ScrollView
           contentContainerStyle={styles.entriesList}
-          ListEmptyComponent={renderEmptyEntries}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -966,7 +1077,17 @@ export default function ListsScreen({
               colors={['#3b82f6']}
             />
           }
-        />
+        >
+          {entries.length === 0 ? (
+            renderEmptyEntries()
+          ) : (
+            entries.map(entry => (
+              <View key={entry.id}>
+                {renderEntry({ item: entry })}
+              </View>
+            ))
+          )}
+        </ScrollView>
       )}
 
       {/* Hide FAB in Unsorted - users should organize items, not add directly */}
@@ -1350,30 +1471,13 @@ export default function ListsScreen({
           {lists.length === 0 ? (
             renderEmptyLists()
           ) : (
-            <SectionList
-              sections={(() => {
-                const { pinned, unpinned } = groupLists(lists);
-                const sections = [];
-                
-                if (pinned.length > 0) {
-                  sections.push({ title: 'PINNED', data: pinned });
-                }
-                
-                if (unpinned.length > 0) {
-                  sections.push({ title: 'LISTS', data: unpinned });
-                }
-                
-                return sections;
-              })()}
-              renderItem={renderList}
-              renderSectionHeader={({ section }) => (
-                <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionHeaderText}>{section.title}</Text>
-                </View>
-              )}
-              keyExtractor={item => item.id}
+            <DraggableFlatList
+              data={flatData}
+              renderItem={renderListRow}
+              keyExtractor={(item) => item.id}
+              onDragEnd={handleDragEnd}
+              activationDistance={10}
               contentContainerStyle={styles.listContainer}
-              stickySectionHeadersEnabled={false}
             />
           )}
 
@@ -1475,6 +1579,14 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 2,
   },
+  // TICKET 11A: Drag feedback
+  listRowDragging: {
+    opacity: 0.9,
+    transform: [{ scale: 1.03 }],
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 8,
+  },
   listIcon: {
     width: 48,
     height: 48,
@@ -1516,6 +1628,19 @@ const styles = StyleSheet.create({
   listContent: { flex: 1 },
   listName: { fontSize: 18, fontWeight: '600', color: '#1a1a1a', marginBottom: 4 },
   listSubtext: { fontSize: 14, color: '#9ca3af' },
+  // TICKET 11A: Action button (⋯)
+  actionButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+  actionButtonText: {
+    fontSize: 24,
+    color: '#9ca3af',
+    fontWeight: '600',
+  },
   detailHeader: {
     backgroundColor: '#fff',
     paddingVertical: 12,

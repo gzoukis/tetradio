@@ -74,7 +74,7 @@ export default function OverviewScreen({
   const loadLists = async () => {
     try {
       const lists = await getAllLists();
-      console.log(`ðŸ“‹ Loaded ${lists.length} total lists from database`);
+      console.log(`�‹ Loaded ${lists.length} total lists from database`);
       
       // Show ONLY user lists in the picker (not system lists like Unsorted)
       // Unsorted should only appear in Lists screen, not in the picker
@@ -179,7 +179,7 @@ export default function OverviewScreen({
       
       // If no list selected, get or create Unsorted
       if (!listId) {
-        console.log('ðŸ” No list selected, calling getOrCreateUnsortedList...');
+        console.log('� No list selected, calling getOrCreateUnsortedList...');
         const unsortedList = await getOrCreateUnsortedList();
         listId = unsortedList.id;
         console.log('✅ Unsorted list obtained:', {
@@ -190,7 +190,7 @@ export default function OverviewScreen({
           deleted_at: unsortedList.deleted_at,
         });
       } else {
-        console.log('ðŸ“ Using selected list:', selectedList?.name);
+        console.log('� Using selected list:', selectedList?.name);
       }
       
       if (entryType === 'task') {
@@ -221,7 +221,7 @@ export default function OverviewScreen({
         });
       }
       
-      console.log(`ðŸ“ Creating ${entryType} with list_id: ${listId}`);
+      console.log(`� Creating ${entryType} with list_id: ${listId}`);
       
       handleCloseModal();
       await loadTasks();
@@ -481,7 +481,7 @@ export default function OverviewScreen({
                       onPress={() => setListPickerVisible(true)}
                     >
                       <Text style={styles.listPickerButtonText}>
-                        {selectedList ? `ðŸ“ ${selectedList.name}` : '+ Add to List (optional)'}
+                        {selectedList ? `📁 ${selectedList.name}` : '+ Add to List (optional)'}
                       </Text>
                     </TouchableOpacity>
 
@@ -590,7 +590,7 @@ export default function OverviewScreen({
                       style={styles.backButton}
                       onPress={handleBackToEntry}
                     >
-                      <Text style={styles.backButtonText}>â† Back</Text>
+                      <Text style={styles.backButtonText}>← Back</Text>
                     </TouchableOpacity>
 
                     <Text style={styles.modalTitle}>New List</Text>
