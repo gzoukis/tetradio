@@ -1,3 +1,4 @@
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import {
   SafeAreaProvider,
   SafeAreaView,
@@ -11,76 +12,122 @@ import TasksScreen from './src/screens/TasksScreen';
 import ListsScreen from './src/screens/ListsScreen';
 import ExpensesScreen from './src/screens/ExpensesScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
-import { getDatabase } from './src/db/database';
+import { initDatabase, getDatabase } from './src/db/database';
 
 type Tab = 'overview' | 'tasks' | 'lists' | 'expenses' | 'settings';
 
-// Global flag to prevent multiple runs
-let fixAlreadyRan = false;
+// Global flag to prevent multiple initialization runs
+let dbInitialized = false;
+let initPromise: Promise<void> | null = null;
 
 /**
- * Safe one-time database fix
- * Only creates Unsorted if it doesn't exist
+ * Initialize database with proper sequencing
+ * 
+ * TICKET 11A FIX: Ensures initialization happens exactly once
+ * and Unsorted creation happens AFTER schema is ready
  */
-async function safeDatabaseFix() {
-  if (fixAlreadyRan) {
-    console.log('â­ï¸  Database fix already ran, skipping...');
-    return;
+async function initializeApp() {
+  // Return existing promise if already initializing
+  if (initPromise) {
+    console.log('🔄 Database initialization already in progress, waiting...');
+    return initPromise;
   }
   
-  console.log('🔧 Safe database fix starting...');
-  fixAlreadyRan = true;
+  // Return immediately if already initialized
+  if (dbInitialized) {
+    console.log('✅ Database already initialized');
+    return Promise.resolve();
+  }
   
-  try {
-    const db = await getDatabase();
-    const now = Date.now();
-    
-    // Check if Unsorted exists (including soft-deleted)
-    const unsorted = await db.getFirstAsync<{ id: string; deleted_at: number | null }>(
-      'SELECT id, deleted_at FROM lists WHERE is_system = 1 LIMIT 1'
-    );
-    
-    if (!unsorted) {
-      console.log('Creating new Unsorted list...');
-      await db.runAsync(
-        `INSERT INTO lists (
-          id, name, icon, color_hint, sort_order,
-          is_pinned, is_archived, is_system,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        ['unsorted-system-list', 'Unsorted', 'ðŸ“¥', '#9ca3af', 9999, 0, 0, 1, now, now]
+  console.log('🚀 Starting app initialization...');
+  
+  // Create initialization promise
+  initPromise = (async () => {
+    try {
+      // Step 1: Initialize schema (this handles migrations)
+      console.log('📊 Step 1: Initialize database schema');
+      await initDatabase();
+      
+      // Step 2: Get database instance
+      console.log('📊 Step 2: Get database instance');
+      const db = await getDatabase();
+      
+      // Step 3: Ensure Unsorted list exists
+      console.log('📊 Step 3: Check/create Unsorted list');
+      const now = Date.now();
+      
+      // Check if Unsorted exists (including soft-deleted)
+      const unsorted = await db.getFirstAsync<{ id: string; deleted_at: number | null }>(
+        'SELECT id, deleted_at FROM lists WHERE is_system = 1 LIMIT 1'
       );
-      console.log('✅ Unsorted list created');
-    } else if (unsorted.deleted_at) {
-      console.log('Restoring soft-deleted Unsorted list...');
-      await db.runAsync(
-        'UPDATE lists SET deleted_at = NULL, updated_at = ? WHERE id = ?',
-        [now, unsorted.id]
-      );
-      console.log('✅ Unsorted list restored');
-    } else {
-      console.log('✅ Unsorted list already exists');
+      
+      if (!unsorted) {
+        console.log('📥 Creating new Unsorted list...');
+        await db.runAsync(
+          `INSERT INTO lists (
+            id, name, icon, color_hint, sort_order,
+            is_pinned, is_archived, is_system,
+            created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ['unsorted-system-list', 'Unsorted', '📥', '#9ca3af', 9999, 0, 0, 1, now, now]
+        );
+        console.log('✅ Unsorted list created');
+      } else if (unsorted.deleted_at) {
+        console.log('📥 Restoring soft-deleted Unsorted list...');
+        await db.runAsync(
+          'UPDATE lists SET deleted_at = NULL, updated_at = ? WHERE id = ?',
+          [now, unsorted.id]
+        );
+        console.log('✅ Unsorted list restored');
+      } else {
+        console.log('✅ Unsorted list already exists');
+      }
+      
+      dbInitialized = true;
+      console.log('✅ App initialization complete');
+      
+    } catch (error) {
+      console.error('❌ App initialization failed:', error);
+      // Reset flags so we can retry
+      dbInitialized = false;
+      initPromise = null;
+      throw error;
     }
-    
-    console.log('✅ Safe database fix complete');
-    
-  } catch (error) {
-    console.error('âŒ Database fix failed:', error);
-    // Don't show alert - just log error
-  }
+  })();
+  
+  return initPromise;
 }
 
 function AppContent() {
   const [tab, setTab] = useState<Tab>('overview');
   const [selectedListId, setSelectedListId] = useState<string | undefined>(undefined);
+  const [appReady, setAppReady] = useState(false);
   const insets = useSafeAreaInsets();
 
-  // Run fix once on mount
+  // Run initialization once on mount
   useEffect(() => {
-    safeDatabaseFix();
+    initializeApp()
+      .then(() => {
+        console.log('✅ App ready to render screens');
+        setAppReady(true);
+      })
+      .catch((error) => {
+        console.error('❌ Failed to initialize app:', error);
+        // Still set ready to avoid infinite loading
+        setAppReady(true);
+      });
   }, []);
 
   const renderScreen = () => {
+    // Show loading until database is ready
+    if (!appReady) {
+      return (
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading...</Text>
+        </View>
+      );
+    }
+    
     switch (tab) {
       case 'tasks':
         return <TasksScreen goToLists={() => setTab('lists')} />;
@@ -140,9 +187,11 @@ function AppContent() {
 
 export default function App() {
   return (
-    <SafeAreaProvider>
-      <AppContent />
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <AppContent />
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
@@ -156,6 +205,16 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f9fafb',
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#666',
   },
   tabBar: {
     flexDirection: 'row',
