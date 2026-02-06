@@ -25,6 +25,9 @@ let initPromise: Promise<void> | null = null;
  * 
  * TICKET 11A FIX: Ensures initialization happens exactly once
  * and Unsorted creation happens AFTER schema is ready
+ * 
+ * CRITICAL: Unsorted list is created ARCHIVED by default
+ * It only becomes visible when items are added to it
  */
 async function initializeApp() {
   // Return existing promise if already initializing
@@ -52,35 +55,53 @@ async function initializeApp() {
       console.log('📊 Step 2: Get database instance');
       const db = await getDatabase();
       
-      // Step 3: Ensure Unsorted list exists
+      // Step 3: Ensure Unsorted list exists (ARCHIVED by default)
       console.log('📊 Step 3: Check/create Unsorted list');
       const now = Date.now();
       
       // Check if Unsorted exists (including soft-deleted)
-      const unsorted = await db.getFirstAsync<{ id: string; deleted_at: number | null }>(
-        'SELECT id, deleted_at FROM lists WHERE is_system = 1 LIMIT 1'
+      const unsorted = await db.getFirstAsync<{ 
+        id: string; 
+        deleted_at: number | null; 
+        is_archived: number;
+      }>(
+        'SELECT id, deleted_at, is_archived FROM lists WHERE is_system = 1 LIMIT 1'
       );
       
       if (!unsorted) {
-        console.log('📥 Creating new Unsorted list...');
+        // Create Unsorted list - ARCHIVED by default so it's hidden until items are added
+        console.log('📦 Creating new Unsorted list (archived by default)...');
         await db.runAsync(
           `INSERT INTO lists (
             id, name, icon, color_hint, sort_order,
             is_pinned, is_archived, is_system,
             created_at, updated_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          ['unsorted-system-list', 'Unsorted', '📥', '#9ca3af', 9999, 0, 0, 1, now, now]
+          [
+            'unsorted-system-list', 
+            'Unsorted', 
+            '📦',  // Box emoji - simpler and more widely supported
+            '#9ca3af', 
+            9999, 
+            0,    // is_pinned = false
+            1,    // is_archived = true (HIDDEN by default)
+            1,    // is_system = true
+            now, 
+            now
+          ]
         );
-        console.log('✅ Unsorted list created');
+        console.log('✅ Unsorted list created (archived - will appear only when items are added)');
       } else if (unsorted.deleted_at) {
-        console.log('📥 Restoring soft-deleted Unsorted list...');
+        // Restore soft-deleted Unsorted, but keep it archived if empty
+        console.log('📦 Restoring soft-deleted Unsorted list (archived)...');
         await db.runAsync(
-          'UPDATE lists SET deleted_at = NULL, updated_at = ? WHERE id = ?',
+          'UPDATE lists SET deleted_at = NULL, is_archived = 1, updated_at = ? WHERE id = ?',
           [now, unsorted.id]
         );
-        console.log('✅ Unsorted list restored');
+        console.log('✅ Unsorted list restored (archived)');
       } else {
-        console.log('✅ Unsorted list already exists');
+        const status = unsorted.is_archived === 1 ? 'archived (hidden)' : 'active (visible)';
+        console.log(`✅ Unsorted list already exists (${status})`);
       }
       
       dbInitialized = true;
