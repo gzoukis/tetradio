@@ -24,6 +24,7 @@ import { getNotesByListId, createNote, deleteNote, updateNote } from '../db/oper
 import { getChecklistsByListId, createChecklist, createChecklistWithItems, deleteChecklist } from '../db/operations';
 import type { List, Task, Note, ChecklistWithStats } from '../types/models';
 import { getPriorityLabel, getPriorityStyle } from '../utils/formatting';
+import { getUserFriendlyError, VALIDATION } from '../utils/validation';
 
 type ListEntry = Task | Note | ChecklistWithStats;
 type MoveModalMode = 'select-list' | 'new-list';
@@ -178,7 +179,10 @@ export default function ListsScreen({
       await loadLists();
     } catch (error) {
       console.error('Failed to create list:', error);
-      Alert.alert('Error', 'Unable to create list. Please try again.');
+      
+      // TICKET 12: User-friendly error messages
+      const message = error instanceof Error ? error.message : getUserFriendlyError(error);
+      Alert.alert('Cannot Create List', message);
     }
   };
 
@@ -882,7 +886,7 @@ export default function ListsScreen({
           ]}
           onPress={() => handleSelectList(list)}
           onLongPress={isDraggable ? drag : undefined}
-          delayLongPress={isDraggable ? 300 : undefined}
+          delayLongPress={isDraggable ? VALIDATION.DELAYS.LONG_PRESS_DRAG : undefined}
           activeOpacity={0.7}
           disabled={isActive}
         >
@@ -938,7 +942,7 @@ export default function ListsScreen({
           onPress={() => setSelectedChecklist(checklist)}
           onLongPress={() => handleChecklistLongPress(checklist)}
           activeOpacity={0.7}
-          delayLongPress={500}
+          delayLongPress={VALIDATION.DELAYS.LONG_PRESS_MENU}
         >
           <View style={styles.checklistIcon}>
             <Text style={styles.checklistIconText}>☑️</Text>
@@ -1005,7 +1009,7 @@ export default function ListsScreen({
               onPress={() => handleStartEditEntry(task)}
               onLongPress={() => handleTaskLongPress(task)}
               activeOpacity={0.7}
-              delayLongPress={500}
+              delayLongPress={VALIDATION.DELAYS.LONG_PRESS_MENU}
             >
               <Text style={[styles.taskTitle, task.completed && styles.taskTitleCompleted]}>
                 {task.title}

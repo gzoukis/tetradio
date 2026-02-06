@@ -4,6 +4,7 @@ import type {
   Task, List, Note, Checklist, ChecklistItem, ChecklistWithStats,
   CreateNote, UpdateNote, CreateChecklist, UpdateChecklist, CreateChecklistItem, UpdateChecklistItem 
 } from '../types/models';
+import { normalizeNameCanonical, normalizeNameDisplay } from '../utils/validation';
 
 export interface TaskWithListName extends Task {
   list_name?: string;
@@ -72,7 +73,42 @@ export async function getAllLists(): Promise<List[]> {
 }
 
 /**
+ * Check if a list name already exists (case-insensitive)
+ * 
+ * TICKET 12: Duplicate name validation
+ * TICKET 12 FOLLOW-UP (1️⃣): Uses canonical normalization
+ * TICKET 12 FOLLOW-UP (4️⃣): Rename-safe with excludeId
+ * 
+ * @param name - List name to check
+ * @param excludeId - Optional: List ID to exclude from check (for rename)
+ * @returns true if duplicate exists, false otherwise
+ */
+export async function listNameExists(name: string, excludeId?: string): Promise<boolean> {
+  const db = await getDatabase();
+  const normalized = normalizeNameCanonical(name);
+  
+  // Get all active list names
+  const rows = await db.getAllAsync<{ id: string; name: string }>(
+    'SELECT id, name FROM lists WHERE deleted_at IS NULL'
+  );
+  
+  return rows.some(row => {
+    // Skip the list being renamed
+    if (excludeId && row.id === excludeId) {
+      return false;
+    }
+    
+    return normalizeNameCanonical(row.name) === normalized;
+  });
+}
+
+/**
  * Create a new list
+ * 
+ * TICKET 12: Added duplicate name validation
+ * TICKET 12 FOLLOW-UP (1️⃣): Uses display normalization for storage
+ * 
+ * @throws Error if list name already exists
  */
 export async function createList(input: {
   name: string;
@@ -82,6 +118,20 @@ export async function createList(input: {
   is_system?: boolean;
 }): Promise<List> {
   const db = await getDatabase();
+  
+  // Normalize for display/storage (preserves case, collapses whitespace)
+  const displayName = normalizeNameDisplay(input.name);
+  
+  if (displayName.length === 0) {
+    throw new Error('List name cannot be empty');
+  }
+  
+  // Check for duplicates (uses canonical normalization internally)
+  const exists = await listNameExists(displayName);
+  if (exists) {
+    throw new Error('A list with this name already exists');
+  }
+  
   const now = Date.now();
   const id = Crypto.randomUUID();
 
@@ -92,7 +142,7 @@ export async function createList(input: {
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
-      input.name,
+      displayName,  // Store display-ready name (case preserved, whitespace collapsed)
       input.sort_order,
       input.is_pinned ? 1 : 0,
       input.is_archived ? 1 : 0,
@@ -104,7 +154,7 @@ export async function createList(input: {
 
   return {
     id,
-    name: input.name,
+    name: displayName,  // Return display name
     icon: undefined,
     color_hint: undefined,
     sort_order: input.sort_order,
