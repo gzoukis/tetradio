@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ScrollView,
   Platform,
+  SafeAreaView,
 } from 'react-native';
 
 export interface ActionMenuItem {
@@ -24,16 +25,18 @@ interface ActionMenuProps {
 }
 
 /**
- * ActionMenu - Custom bottom sheet menu
+ * ActionMenu - Adaptive action menu
  * 
- * TICKET 13: Replacement for Alert.alert() to support unlimited options
+ * TICKET 13 FIX: Adaptive positioning
+ * - Android: Bottom sheet (Material Design)
+ * - iOS: Centered modal (matches ActionSheet)
  * 
  * Features:
  * - Unlimited menu items (scrollable)
  * - Destructive styling (red text)
  * - Optional icons
  * - Platform-consistent design
- * - Cancel button always at bottom
+ * - Safe area aware
  * 
  * Usage:
  * ```tsx
@@ -63,66 +66,69 @@ export default function ActionMenu({ visible, onClose, title, items }: ActionMen
         activeOpacity={1}
         onPress={onClose}
       >
-        {/* Menu content - prevent dismiss on tap */}
-        <TouchableOpacity
-          activeOpacity={1}
-          onPress={(e) => e.stopPropagation()}
-          style={styles.menuContainer}
-        >
-          <View style={styles.menu}>
-            {/* Title (optional) */}
-            {title && (
-              <View style={styles.header}>
-                <Text style={styles.title}>{title}</Text>
-              </View>
-            )}
+        {/* Safe area wrapper - handles device-specific insets */}
+        <SafeAreaView style={styles.safeArea}>
+          {/* Menu content - prevent dismiss on tap */}
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={(e) => e.stopPropagation()}
+            style={Platform.OS === 'ios' ? styles.menuContainerCentered : styles.menuContainerBottom}
+          >
+            <View style={styles.menu}>
+              {/* Title (optional) */}
+              {title && (
+                <View style={styles.header}>
+                  <Text style={styles.title}>{title}</Text>
+                </View>
+              )}
 
-            {/* Menu items (scrollable) */}
-            <ScrollView
-              style={styles.itemsContainer}
-              bounces={false}
-              showsVerticalScrollIndicator={false}
-            >
-              {items.map((item, index) => (
-                <TouchableOpacity
-                  key={index}
-                  style={[
-                    styles.item,
-                    index === 0 && !title && styles.itemFirst,
-                    index === items.length - 1 && styles.itemLast,
-                  ]}
-                  onPress={() => {
-                    onClose();
-                    // Delay action slightly to let modal close smoothly
-                    setTimeout(() => item.onPress(), 150);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  {item.icon && (
-                    <Text style={styles.icon}>{item.icon}</Text>
-                  )}
-                  <Text
+              {/* Menu items (scrollable) */}
+              <ScrollView
+                style={styles.itemsContainer}
+                bounces={false}
+                showsVerticalScrollIndicator={false}
+              >
+                {items.map((item, index) => (
+                  <TouchableOpacity
+                    key={index}
                     style={[
-                      styles.label,
-                      item.destructive && styles.labelDestructive,
+                      styles.item,
+                      index === 0 && !title && styles.itemFirst,
+                      index === items.length - 1 && styles.itemLast,
                     ]}
+                    onPress={() => {
+                      onClose();
+                      // Delay action slightly to let modal close smoothly
+                      setTimeout(() => item.onPress(), 150);
+                    }}
+                    activeOpacity={0.7}
                   >
-                    {item.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+                    {item.icon && (
+                      <Text style={styles.icon}>{item.icon}</Text>
+                    )}
+                    <Text
+                      style={[
+                        styles.label,
+                        item.destructive && styles.labelDestructive,
+                      ]}
+                    >
+                      {item.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
 
-            {/* Cancel button (always at bottom) */}
-            <TouchableOpacity
-              style={styles.cancelButton}
-              onPress={onClose}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
+              {/* Cancel button (always at bottom) */}
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={onClose}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </SafeAreaView>
       </TouchableOpacity>
     </Modal>
   );
@@ -132,17 +138,31 @@ const styles = StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: Platform.OS === 'ios' ? 'center' : 'flex-end',
+  },
+  safeArea: {
+    flex: 1,
+    justifyContent: Platform.OS === 'ios' ? 'center' : 'flex-end',
+  },
+  // Android: Bottom sheet (Material Design)
+  menuContainerBottom: {
     justifyContent: 'flex-end',
   },
-  menuContainer: {
-    justifyContent: 'flex-end',
+  // iOS: Centered (like ActionSheet)
+  menuContainerCentered: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
   },
   menu: {
     backgroundColor: '#fff',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    paddingBottom: Platform.OS === 'ios' ? 34 : 16, // Safe area on iOS
-    maxHeight: '70%', // Allow scrolling if many items
+    borderRadius: 16,
+    maxHeight: '80%', // Prevent overflow on small screens
+    minWidth: Platform.OS === 'ios' ? 300 : undefined,
+    maxWidth: Platform.OS === 'ios' ? 400 : undefined,
+    width: Platform.OS === 'ios' ? '90%' : '100%',
+    // Remove borderTopLeftRadius/borderTopRightRadius - use consistent borderRadius
+    overflow: 'hidden',
   },
   header: {
     paddingVertical: 16,
