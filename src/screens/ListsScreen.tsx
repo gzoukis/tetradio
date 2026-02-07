@@ -2,6 +2,7 @@ import DatePickerButton from '../components/DatePickerButton';
 import NoteCard from '../components/NoteCard';
 import NoteEditor from '../components/NoteEditor';
 import ChecklistScreen from './ChecklistScreen';
+import ActionMenu, { ActionMenuItem } from '../components/ActionMenu';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -86,6 +87,10 @@ export default function ListsScreen({
   const [renamingList, setRenamingList] = useState<List | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const renameInputRef = useRef<TextInput>(null);
+
+  // TICKET 13 FIX: Custom action menu state
+  const [actionMenuVisible, setActionMenuVisible] = useState(false);
+  const [actionMenuList, setActionMenuList] = useState<List | null>(null);
 
   useEffect(() => {
     loadLists();
@@ -331,9 +336,10 @@ export default function ListsScreen({
     }
   };
 
-  // TICKET 11A: Show action menu via ⋯ button
+  // TICKET 11A + TICKET 13 FIX: Show action menu via ⋯ button
   const handleShowActionMenu = (list: List) => {
     if (Platform.OS === 'ios') {
+      // iOS: Use native ActionSheet
       const options = ['Cancel'];
       const actions: (() => void)[] = [];
       
@@ -366,32 +372,9 @@ export default function ListsScreen({
         }
       );
     } else {
-      const buttons: any[] = [{ text: 'Cancel', style: 'cancel' }];
-      
-      // TICKET 13: Rename option (not available for system lists)
-      if (!list.is_system) {
-        buttons.push({
-          text: 'Rename',
-          onPress: () => handleOpenRenameModal(list),
-        });
-      }
-      
-      // Pin/Unpin option (not available for system lists)
-      if (!list.is_system) {
-        buttons.push({
-          text: list.is_pinned ? 'Unpin' : 'Pin to Top',
-          onPress: () => handleTogglePin(list),
-        });
-      }
-      
-      // Delete option
-      buttons.push({
-        text: 'Delete List',
-        onPress: () => handleDeleteList(list),
-        style: 'destructive',
-      });
-      
-      Alert.alert(list.name, 'What would you like to do?', buttons, { cancelable: true });
+      // Android: Use custom ActionMenu (no button limit)
+      setActionMenuList(list);
+      setActionMenuVisible(true);
     }
   };
 
@@ -1747,6 +1730,46 @@ export default function ListsScreen({
           </TouchableOpacity>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* TICKET 13 FIX: Custom Action Menu (Android) */}
+      {actionMenuList && (
+        <ActionMenu
+          visible={actionMenuVisible}
+          onClose={() => {
+            setActionMenuVisible(false);
+            setActionMenuList(null);
+          }}
+          title={actionMenuList.name}
+          items={(() => {
+            const items: ActionMenuItem[] = [];
+            
+            // Rename (user lists only)
+            if (!actionMenuList.is_system) {
+              items.push({
+                label: 'Rename',
+                onPress: () => handleOpenRenameModal(actionMenuList),
+              });
+            }
+            
+            // Pin/Unpin (user lists only)
+            if (!actionMenuList.is_system) {
+              items.push({
+                label: actionMenuList.is_pinned ? 'Unpin' : 'Pin to Top',
+                onPress: () => handleTogglePin(actionMenuList),
+              });
+            }
+            
+            // Delete (always available)
+            items.push({
+              label: 'Delete List',
+              onPress: () => handleDeleteList(actionMenuList),
+              destructive: true,
+            });
+            
+            return items;
+          })()}
+        />
+      )}
     </View>
   );
 }
