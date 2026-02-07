@@ -18,13 +18,13 @@ import {
   ScrollView,
 } from 'react-native';
 import DraggableFlatList, { RenderItemParams, ScaleDecorator } from 'react-native-draggable-flatlist';
-import { getAllLists, createList, deleteList, getActiveEntriesCountByListId, archiveList, moveEntryToList, toggleListPin, updateListSortOrders } from '../db/operations';
+import { getAllLists, createList, deleteList, getActiveEntriesCountByListId, archiveList, moveEntryToList, toggleListPin, updateListSortOrders, renameList } from '../db/operations';
 import { getTasksByListId, createTask, deleteTask, updateTask } from '../db/operations';
 import { getNotesByListId, createNote, deleteNote, updateNote } from '../db/operations';
 import { getChecklistsByListId, createChecklist, createChecklistWithItems, deleteChecklist } from '../db/operations';
 import type { List, Task, Note, ChecklistWithStats } from '../types/models';
 import { getPriorityLabel, getPriorityStyle } from '../utils/formatting';
-import { getUserFriendlyError, VALIDATION } from '../utils/validation';
+import { getUserFriendlyError, VALIDATION, normalizeNameCanonical } from '../utils/validation';
 
 type ListEntry = Task | Note | ChecklistWithStats;
 type MoveModalMode = 'select-list' | 'new-list';
@@ -80,6 +80,12 @@ export default function ListsScreen({
   const [moveTargetList, setMoveTargetList] = useState<List | null>(null);
   const [moveNewListName, setMoveNewListName] = useState('');
   const [availableListsForMove, setAvailableListsForMove] = useState<List[]>([]);
+
+  // TICKET 13: Rename List state
+  const [renameModalVisible, setRenameModalVisible] = useState(false);
+  const [renamingList, setRenamingList] = useState<List | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const renameInputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     loadLists();
@@ -249,11 +255,93 @@ export default function ListsScreen({
     }
   };
 
+  // TICKET 13: Rename List handlers
+  const handleOpenRenameModal = (list: List) => {
+    setRenamingList(list);
+    setRenameValue(list.name);
+    setRenameModalVisible(true);
+  };
+
+  const handleCloseRenameModal = () => {
+    setRenameModalVisible(false);
+    setRenamingList(null);
+    setRenameValue('');
+  };
+
+  const handleRenameList = async () => {
+    if (!renamingList) return;
+
+    const trimmedName = renameValue.trim();
+
+    // Empty name check
+    if (!trimmedName) {
+      Alert.alert('Empty Name', 'Please enter a name for your list.', [
+        {
+          text: 'OK',
+          onPress: () => {
+            // TICKET 12 UX: Focus input after user dismisses alert
+            setTimeout(() => renameInputRef.current?.focus(), 100);
+          },
+        },
+      ]);
+      return;
+    }
+
+    // No-op: Rename to same name (case may differ, but canonical is same)
+    if (normalizeNameCanonical(trimmedName) === normalizeNameCanonical(renamingList.name)) {
+      handleCloseRenameModal();
+      return;
+    }
+
+    try {
+      await renameList(renamingList.id, trimmedName);
+      handleCloseRenameModal();
+      await loadLists();
+
+      // If we renamed the currently selected list, update the reference
+      if (selectedList?.id === renamingList.id) {
+        const updatedLists = await getAllLists();
+        const updated = updatedLists.find(l => l.id === renamingList.id);
+        if (updated) {
+          setSelectedList(updated);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to rename list:', error);
+
+      // TICKET 12 UX: User-friendly error with focus affordance
+      const message = error instanceof Error ? error.message : getUserFriendlyError(error);
+      Alert.alert('Cannot Rename List', message, [
+        {
+          text: 'OK',
+          onPress: () => {
+            // Focus and select text for easy correction
+            setTimeout(() => {
+              renameInputRef.current?.focus();
+              // Select all text so user can easily type new name
+              if (Platform.OS === 'ios') {
+                renameInputRef.current?.setNativeProps({
+                  selection: { start: 0, end: renameValue.length },
+                });
+              }
+            }, 100);
+          },
+        },
+      ]);
+    }
+  };
+
   // TICKET 11A: Show action menu via ⋯ button
   const handleShowActionMenu = (list: List) => {
     if (Platform.OS === 'ios') {
       const options = ['Cancel'];
       const actions: (() => void)[] = [];
+      
+      // TICKET 13: Rename option (not available for system lists)
+      if (!list.is_system) {
+        options.push('Rename');
+        actions.push(() => handleOpenRenameModal(list));
+      }
       
       // Pin/Unpin option (not available for system lists)
       if (!list.is_system) {
@@ -279,6 +367,14 @@ export default function ListsScreen({
       );
     } else {
       const buttons: any[] = [{ text: 'Cancel', style: 'cancel' }];
+      
+      // TICKET 13: Rename option (not available for system lists)
+      if (!list.is_system) {
+        buttons.push({
+          text: 'Rename',
+          onPress: () => handleOpenRenameModal(list),
+        });
+      }
       
       // Pin/Unpin option (not available for system lists)
       if (!list.is_system) {
@@ -1581,6 +1677,69 @@ export default function ListsScreen({
                     disabled={!newListName.trim()}
                   >
                     <Text style={styles.buttonCreateText}>Create</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* TICKET 13: Rename List Modal */}
+      <Modal
+        visible={renameModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={handleCloseRenameModal}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalContainer}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={handleCloseRenameModal}
+          >
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={e => e.stopPropagation()}
+            >
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Rename List</Text>
+
+                <TextInput
+                  ref={renameInputRef}
+                  style={styles.input}
+                  placeholder="List name"
+                  value={renameValue}
+                  onChangeText={setRenameValue}
+                  autoFocus
+                  selectTextOnFocus
+                  returnKeyType="done"
+                  onSubmitEditing={handleRenameList}
+                />
+
+                <View style={styles.modalButtons}>
+                  <TouchableOpacity
+                    style={[styles.button, styles.buttonCancel]}
+                    onPress={handleCloseRenameModal}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.buttonCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.button,
+                      styles.buttonCreate,
+                      !renameValue.trim() && styles.buttonDisabled,
+                    ]}
+                    onPress={handleRenameList}
+                    activeOpacity={0.7}
+                    disabled={!renameValue.trim()}
+                  >
+                    <Text style={styles.buttonCreateText}>Save</Text>
                   </TouchableOpacity>
                 </View>
               </View>

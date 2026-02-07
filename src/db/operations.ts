@@ -167,6 +167,42 @@ export async function createList(input: {
 }
 
 /**
+ * Rename a list
+ * 
+ * TICKET 13: Rename List UI
+ * 
+ * Uses same validation as createList (shared contract from Ticket 12).
+ * Excludes the list being renamed from duplicate detection.
+ * 
+ * @param listId - ID of list to rename
+ * @param newName - New name for the list
+ * @throws Error if new name is invalid or already exists
+ */
+export async function renameList(listId: string, newName: string): Promise<void> {
+  const db = await getDatabase();
+  
+  // Normalize for display/storage (preserves case, collapses whitespace)
+  const displayName = normalizeNameDisplay(newName);
+  
+  if (displayName.length === 0) {
+    throw new Error('List name cannot be empty');
+  }
+  
+  // Check for duplicates (exclude self using listId)
+  const exists = await listNameExists(displayName, listId);
+  if (exists) {
+    throw new Error('A list with this name already exists');
+  }
+  
+  const now = Date.now();
+  
+  await db.runAsync(
+    'UPDATE lists SET name = ?, updated_at = ? WHERE id = ? AND is_system = 0',
+    [displayName, now, listId]
+  );
+}
+
+/**
  * Soft-delete a list and all its entries
  * 
  * VERSION 2: Updated to reference entries table
