@@ -1,34 +1,69 @@
 /**
  * Validation utilities for data integrity and user input
  * 
- * TICKET 12 FOLLOW-UP: Enhanced validation with canonical normalization
- * 
- * ARCHITECTURE PRINCIPLES:
- * 1. Canonical Form: Single source of truth for name normalization
- * 2. Separation of Concerns: Display name != Comparison name != Storage name
- * 3. Defensive: All comparisons use canonical form
- * 4. Extensible: Designed for future entity types (tasks, notes, etc.)
+ * TICKET 12 FINAL: Production-ready validation with:
+ * - Canonical normalization (whitespace collapsing)
+ * - Dev-only invariant checks
+ * - Shared validation contract for create/rename
+ * - Analytics hooks for observability
  */
 
 /**
+ * Development mode check
+ */
+const __DEV__ = process.env.NODE_ENV !== 'production';
+
+/**
+ * Analytics hook interface (no-op by default, ready for future implementation)
+ * 
+ * USAGE: Replace implementation when analytics provider added
+ */
+export const Analytics = {
+  /**
+   * Log validation error for tracking
+   * @param context - Where error occurred (e.g., 'ListsScreen.create')
+   * @param errorType - Type of validation error
+   * @param metadata - Additional context
+   */
+  logValidationError(
+    context: string,
+    errorType: string,
+    metadata?: Record<string, any>
+  ): void {
+    // No-op by default - implement when analytics added
+    if (__DEV__) {
+      console.log('[Analytics]', context, errorType, metadata);
+    }
+  },
+
+  /**
+   * Log successful validation for conversion tracking
+   */
+  logValidationSuccess(context: string): void {
+    // No-op by default
+    if (__DEV__) {
+      console.log('[Analytics]', context, 'success');
+    }
+  },
+};
+
+/**
  * Validation severity levels
- * 
- * TICKET 12 FOLLOW-UP (5️⃣): Severity system for future UX polish
- * 
- * Usage:
- * - error: Blocks action, must be fixed
- * - warning: Informational, allows action (future use)
  */
 export type ValidationSeverity = 'error' | 'warning';
 
 /**
- * Validation result with severity
+ * Validation result with UX affordances
  */
 export interface ValidationResult {
   valid: boolean;
   severity?: ValidationSeverity;
-  code?: string;  // For future error code system
+  code?: string;
   message?: string;
+  /** Field that should receive focus on error */
+  focusField?: string;
+  /** Suggest correction to user */
+  suggestion?: string;
 }
 
 /**
@@ -49,38 +84,74 @@ export const VALIDATION = {
 } as const;
 
 /**
- * CANONICAL NAME NORMALIZATION (TICKET 12 FOLLOW-UP 1️⃣)
+ * Dev-only: Check for normalization invariants
+ * Throws in development if canonical form contains invalid patterns
+ */
+function assertNormalizationInvariants(
+  original: string,
+  canonical: string
+): void {
+  if (!__DEV__) return;
+
+  // Invariant: Canonical must be trimmed
+  if (canonical !== canonical.trim()) {
+    throw new Error(
+      `INVARIANT VIOLATION: Canonical form not trimmed. Input: "${original}" → "${canonical}"`
+    );
+  }
+
+  // Invariant: Canonical must not have multiple consecutive spaces
+  if (/\s{2,}/.test(canonical)) {
+    throw new Error(
+      `INVARIANT VIOLATION: Canonical form has multiple spaces. Input: "${original}" → "${canonical}"`
+    );
+  }
+
+  // Invariant: Canonical must be lowercase
+  if (canonical !== canonical.toLowerCase()) {
+    throw new Error(
+      `INVARIANT VIOLATION: Canonical form not lowercase. Input: "${original}" → "${canonical}"`
+    );
+  }
+
+  // Invariant: Canonical must not have tabs/newlines
+  if (/[\t\n\r]/.test(canonical)) {
+    throw new Error(
+      `INVARIANT VIOLATION: Canonical form has whitespace chars. Input: "${original}" → "${canonical}"`
+    );
+  }
+}
+
+/**
+ * CANONICAL NAME NORMALIZATION
  * 
- * This is the SINGLE source of truth for name normalization.
- * All name comparisons MUST use this function.
+ * Single source of truth for name comparison.
+ * All duplicate checks MUST use this function.
  * 
  * BEHAVIOR:
  * 1. Trim leading/trailing whitespace
  * 2. Collapse internal whitespace to single spaces
- * 3. Convert to lowercase for case-insensitive comparison
+ * 3. Convert to lowercase
  * 
  * EXAMPLES:
  * - "  My List  " → "my list"
  * - "My  List" (double space) → "my list"
  * - "MY LIST" → "my list"
  * - "My\tList" (tab) → "my list"
- * - "My\nList" (newline) → "my list"
- * 
- * PREVENTS:
- * - Duplicate lists with different spacing: "Work" vs "Work " vs "Work  "
- * - Case variations: "Work" vs "work" vs "WORK"
- * - Invisible character issues: tabs, newlines, etc.
- * - Import/export duplication
- * - Search inconsistencies
  * 
  * @param name - Raw name string
  * @returns Canonical normalized form (for comparison only)
  */
 export function normalizeNameCanonical(name: string): string {
-  return name
-    .trim()                           // Remove leading/trailing whitespace
-    .replace(/\s+/g, ' ')            // Collapse internal whitespace to single space
-    .toLowerCase();                   // Case-insensitive comparison
+  const canonical = name
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+
+  // Dev-only invariant checks
+  assertNormalizationInvariants(name, canonical);
+
+  return canonical;
 }
 
 /**
@@ -93,23 +164,11 @@ export function normalizeNameCanonical(name: string): string {
  * 2. Collapse internal whitespace to single spaces
  * 3. Preserve original case
  * 
- * EXAMPLES:
- * - "  My List  " → "My List"
- * - "My  List" → "My List"
- * - "MY LIST" → "MY LIST" (case preserved)
- * 
- * USE CASE:
- * - Store in database
- * - Display to user
- * - Export
- * 
  * @param name - Raw name string
  * @returns Display-ready name (case preserved)
  */
 export function normalizeNameDisplay(name: string): string {
-  return name
-    .trim()
-    .replace(/\s+/g, ' ');
+  return name.trim().replace(/\s+/g, ' ');
 }
 
 /**
@@ -121,35 +180,112 @@ export function normalizeListName(name: string): string {
 }
 
 /**
- * Validate list name
- * Returns error message if invalid, null if valid
+ * SHARED VALIDATION CONTRACT
  * 
- * TICKET 12 FOLLOW-UP (4️⃣): Rename-safe validation
+ * Single validation function used by both create AND rename.
+ * Ensures identical validation rules across all entry points.
+ * 
+ * @param name - Name to validate
+ * @param context - 'create' or 'rename' (for analytics)
+ * @returns ValidationResult with UX affordances
  */
-export function validateListName(name: string): string | null {
+export function validateName(
+  name: string,
+  context: 'create' | 'rename' = 'create'
+): ValidationResult {
   const display = normalizeNameDisplay(name);
-  
+
+  // Empty name check
   if (display.length === 0) {
-    return 'List name cannot be empty';
+    Analytics.logValidationError(context, 'empty_name');
+    return {
+      valid: false,
+      severity: 'error',
+      code: 'EMPTY_NAME',
+      message: 'Name cannot be empty',
+      focusField: 'name',
+      suggestion: 'Enter a name for your list',
+    };
   }
-  
+
+  // Length check
   if (display.length > VALIDATION.LIST_NAME_MAX_LENGTH) {
-    return `List name cannot exceed ${VALIDATION.LIST_NAME_MAX_LENGTH} characters`;
+    Analytics.logValidationError(context, 'name_too_long', {
+      length: display.length,
+      max: VALIDATION.LIST_NAME_MAX_LENGTH,
+    });
+    return {
+      valid: false,
+      severity: 'error',
+      code: 'NAME_TOO_LONG',
+      message: `Name cannot exceed ${VALIDATION.LIST_NAME_MAX_LENGTH} characters`,
+      focusField: 'name',
+      suggestion: `Current: ${display.length} chars. Please shorten.`,
+    };
   }
-  
-  return null;
+
+  // All checks passed
+  Analytics.logValidationSuccess(context);
+  return { valid: true };
 }
 
 /**
- * Check if a list name is a duplicate
- * Case-insensitive comparison after normalization
+ * Legacy function for backward compatibility
+ * @deprecated Use validateName() instead
+ */
+export function validateListName(name: string): string | null {
+  const result = validateName(name, 'create');
+  return result.valid ? null : result.message || 'Invalid name';
+}
+
+/**
+ * Check if a name is a duplicate
  * 
- * TICKET 12 FOLLOW-UP (4️⃣): Rename-safe with excludeId
+ * Shared by both create and rename flows.
  * 
  * @param newName - Name to check
- * @param existingNames - Array of existing list names
- * @param excludeId - Optional: ID to exclude from check (for rename - don't compare against self)
- * @param existingIds - Optional: Parallel array of IDs (must match existingNames length)
+ * @param existingNames - Array of existing names
+ * @param excludeId - Optional: ID to exclude (for rename - don't compare against self)
+ * @param existingIds - Optional: Parallel array of IDs
+ */
+export function isDuplicateName(
+  newName: string,
+  existingNames: string[],
+  excludeId?: string,
+  existingIds?: string[]
+): boolean {
+  const normalizedNew = normalizeNameCanonical(newName);
+
+  // Dev-only: Check for duplicate IDs in existingIds
+  if (__DEV__ && existingIds) {
+    const idSet = new Set(existingIds);
+    if (idSet.size !== existingIds.length) {
+      console.warn(
+        'VALIDATION WARNING: existingIds contains duplicates. This may cause incorrect duplicate detection.'
+      );
+    }
+  }
+
+  // Dev-only: Verify array lengths match
+  if (__DEV__ && existingIds && existingNames.length !== existingIds.length) {
+    throw new Error(
+      `INVARIANT VIOLATION: existingNames (${existingNames.length}) and existingIds (${existingIds.length}) length mismatch`
+    );
+  }
+
+  return existingNames.some((existing, index) => {
+    // Skip comparison with excluded ID (for rename)
+    if (excludeId && existingIds && existingIds[index] === excludeId) {
+      return false;
+    }
+
+    return normalizeNameCanonical(existing) === normalizedNew;
+  });
+}
+
+/**
+ * Legacy alias for backward compatibility
+ * @deprecated Use isDuplicateName() instead
  */
 export function isDuplicateListName(
   newName: string,
@@ -157,28 +293,65 @@ export function isDuplicateListName(
   excludeId?: string,
   existingIds?: string[]
 ): boolean {
-  const normalizedNew = normalizeNameCanonical(newName);
-  
-  return existingNames.some((existing, index) => {
-    // Skip comparison with excluded ID (for rename)
-    if (excludeId && existingIds && existingIds[index] === excludeId) {
-      return false;
-    }
-    
-    return normalizeNameCanonical(existing) === normalizedNew;
-  });
+  return isDuplicateName(newName, existingNames, excludeId, existingIds);
 }
 
 /**
- * Validate and prepare list name for save
- * Returns { valid: true, name: string } or { valid: false, error: string }
+ * UNIFIED VALIDATION FOR CREATE/RENAME
  * 
- * TICKET 12 FOLLOW-UP (4️⃣): Rename-safe validation
+ * Single function that validates name format AND checks for duplicates.
+ * Used by both create and rename flows to ensure identical validation.
  * 
  * @param name - Name to validate
- * @param existingNames - Array of existing list names
- * @param excludeId - Optional: ID to exclude from duplicate check (for rename)
- * @param existingIds - Optional: Parallel array of IDs
+ * @param existingNames - Array of existing names
+ * @param mode - 'create' or 'rename'
+ * @param excludeId - For rename: ID of item being renamed
+ * @param existingIds - Parallel array of IDs (optional)
+ * @returns ValidationResult with display name if valid
+ */
+export function validateNameWithDuplicateCheck(
+  name: string,
+  existingNames: string[],
+  mode: 'create' | 'rename' = 'create',
+  excludeId?: string,
+  existingIds?: string[]
+): { valid: true; name: string } | { valid: false; error: ValidationResult } {
+  // Step 1: Format validation
+  const formatResult = validateName(name, mode);
+  if (!formatResult.valid) {
+    Analytics.logValidationError(`${mode}.format`, formatResult.code || 'unknown');
+    return { valid: false, error: formatResult };
+  }
+
+  const displayName = normalizeNameDisplay(name);
+
+  // Step 2: Duplicate check
+  if (isDuplicateName(displayName, existingNames, excludeId, existingIds)) {
+    Analytics.logValidationError(`${mode}.duplicate`, 'DUPLICATE_NAME', {
+      name: displayName,
+    });
+
+    return {
+      valid: false,
+      error: {
+        valid: false,
+        severity: 'error',
+        code: 'DUPLICATE_NAME',
+        message: 'A list with this name already exists',
+        focusField: 'name',
+        suggestion: 'Try a different name',
+      },
+    };
+  }
+
+  // Success
+  Analytics.logValidationSuccess(mode);
+  return { valid: true, name: displayName };
+}
+
+/**
+ * Legacy function for backward compatibility
+ * @deprecated Use validateNameWithDuplicateCheck() instead
  */
 export function prepareListName(
   name: string,
@@ -186,28 +359,24 @@ export function prepareListName(
   excludeId?: string,
   existingIds?: string[]
 ): { valid: true; name: string } | { valid: false; error: string } {
-  // Validate format
-  const validationError = validateListName(name);
-  if (validationError) {
-    return { valid: false, error: validationError };
+  const result = validateNameWithDuplicateCheck(
+    name,
+    existingNames,
+    'create',
+    excludeId,
+    existingIds
+  );
+
+  if (result.valid) {
+    return { valid: true, name: result.name };
   }
-  
-  const displayName = normalizeNameDisplay(name);
-  
-  // Check for duplicates using canonical form
-  if (isDuplicateListName(displayName, existingNames, excludeId, existingIds)) {
-    return { valid: false, error: 'A list with this name already exists' };
-  }
-  
-  return { valid: true, name: displayName };
+
+  return { valid: false, error: result.error.message || 'Invalid name' };
 }
 
 /**
  * Deduplicate and reassign sort orders
  * Ensures no gaps, no duplicates, sequential from 0
- * 
- * @param items - Array of items with sort_order property
- * @returns Items with reassigned sort_order values
  */
 export function deduplicateSortOrders<T extends { sort_order: number }>(
   items: T[]
@@ -221,48 +390,25 @@ export function deduplicateSortOrders<T extends { sort_order: number }>(
 }
 
 /**
- * ERROR CODE SYSTEM (TICKET 12 FOLLOW-UP 3️⃣)
- * 
- * Structured error codes for better error handling, logging, and future i18n.
- * 
- * ARCHITECTURE:
- * - Errors have machine-readable codes
- * - Codes map to user-friendly messages
- * - Easy to track in analytics
- * - Ready for localization
- * 
- * IMPLEMENTATION STATUS: Designed but not yet enforced
- * MIGRATION PATH: Gradually replace string errors with AppError instances
+ * Error codes for structured error handling
  */
 export enum ErrorCode {
-  // Validation errors
   EMPTY_NAME = 'EMPTY_NAME',
   NAME_TOO_LONG = 'NAME_TOO_LONG',
   DUPLICATE_NAME = 'DUPLICATE_NAME',
   INVALID_CHARACTERS = 'INVALID_CHARACTERS',
-  
-  // Database errors
   DB_CONSTRAINT_VIOLATION = 'DB_CONSTRAINT_VIOLATION',
   DB_FOREIGN_KEY_VIOLATION = 'DB_FOREIGN_KEY_VIOLATION',
   DB_NOT_NULL_VIOLATION = 'DB_NOT_NULL_VIOLATION',
   DB_UNIQUE_VIOLATION = 'DB_UNIQUE_VIOLATION',
   DB_TRANSACTION_ERROR = 'DB_TRANSACTION_ERROR',
-  
-  // Network errors
   NETWORK_ERROR = 'NETWORK_ERROR',
   CONNECTION_ERROR = 'CONNECTION_ERROR',
-  
-  // Generic
   UNKNOWN_ERROR = 'UNKNOWN_ERROR',
 }
 
 /**
  * Structured application error
- * 
- * USAGE (future):
- * ```typescript
- * throw new AppError(ErrorCode.DUPLICATE_NAME, 'A list with this name already exists');
- * ```
  */
 export class AppError extends Error {
   constructor(
@@ -276,81 +422,68 @@ export class AppError extends Error {
 }
 
 /**
- * Map error codes to user-friendly messages
- * 
- * FUTURE: This becomes the i18n lookup table
+ * Error message lookup
  */
 export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   [ErrorCode.EMPTY_NAME]: 'Name cannot be empty',
   [ErrorCode.NAME_TOO_LONG]: 'Name is too long',
   [ErrorCode.DUPLICATE_NAME]: 'A list with this name already exists',
   [ErrorCode.INVALID_CHARACTERS]: 'Name contains invalid characters',
-  
   [ErrorCode.DB_CONSTRAINT_VIOLATION]: 'This operation violates data integrity rules',
   [ErrorCode.DB_FOREIGN_KEY_VIOLATION]: 'This operation cannot be completed due to related data',
   [ErrorCode.DB_NOT_NULL_VIOLATION]: 'Required information is missing',
   [ErrorCode.DB_UNIQUE_VIOLATION]: 'This item already exists',
   [ErrorCode.DB_TRANSACTION_ERROR]: 'This operation is temporarily unavailable. Please try again.',
-  
   [ErrorCode.NETWORK_ERROR]: 'Network error occurred',
   [ErrorCode.CONNECTION_ERROR]: 'Unable to connect. Please check your connection and try again.',
-  
   [ErrorCode.UNKNOWN_ERROR]: 'Something went wrong. Please try again.',
 };
 
 /**
- * User-friendly error messages for common database errors
- * 
- * TICKET 12 FOLLOW-UP (3️⃣): Enhanced with error code detection
+ * Convert error to user-friendly message
  */
 export function getUserFriendlyError(error: unknown): string {
-  // Handle AppError instances (future)
   if (error instanceof AppError) {
     return error.message;
   }
-  
+
   if (error instanceof Error) {
     const message = error.message.toLowerCase();
-    
-    // Database constraint violations
+
     if (message.includes('unique') || message.includes('duplicate')) {
       return ERROR_MESSAGES[ErrorCode.DB_UNIQUE_VIOLATION];
     }
-    
+
     if (message.includes('foreign key')) {
       return ERROR_MESSAGES[ErrorCode.DB_FOREIGN_KEY_VIOLATION];
     }
-    
+
     if (message.includes('constraint')) {
       return ERROR_MESSAGES[ErrorCode.DB_CONSTRAINT_VIOLATION];
     }
-    
+
     if (message.includes('not null')) {
       return ERROR_MESSAGES[ErrorCode.DB_NOT_NULL_VIOLATION];
     }
-    
-    // Transaction errors
+
     if (message.includes('transaction')) {
       return ERROR_MESSAGES[ErrorCode.DB_TRANSACTION_ERROR];
     }
-    
-    // Network/connection errors
+
     if (message.includes('network')) {
       return ERROR_MESSAGES[ErrorCode.NETWORK_ERROR];
     }
-    
+
     if (message.includes('connection')) {
       return ERROR_MESSAGES[ErrorCode.CONNECTION_ERROR];
     }
   }
-  
-  // Generic fallback
+
   return ERROR_MESSAGES[ErrorCode.UNKNOWN_ERROR];
 }
 
 /**
  * Format validation errors for display
- * Consistent styling across the app
  */
 export function formatValidationError(fieldName: string, error: string): string {
   return `${fieldName}: ${error}`;

@@ -62,6 +62,9 @@ export default function ListsScreen({
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [editingEntryTitle, setEditingEntryTitle] = useState('');
   const entryEditInputRef = useRef<TextInput>(null);
+  
+  // TICKET 12 FINAL: Input ref for UX affordances (focus on error)
+  const listNameInputRef = useRef<TextInput>(null);
 
   const [editingNote, setEditingNote] = useState<Note | null>(null);
   
@@ -162,7 +165,15 @@ export default function ListsScreen({
     const trimmedName = newListName.trim();
 
     if (!trimmedName) {
-      Alert.alert('Empty Name', 'Please enter a name for your list.');
+      Alert.alert('Empty Name', 'Please enter a name for your list.', [
+        {
+          text: 'OK',
+          onPress: () => {
+            // TICKET 12 FINAL: Focus input after user dismisses alert
+            setTimeout(() => listNameInputRef.current?.focus(), 100);
+          },
+        },
+      ]);
       return;
     }
 
@@ -180,9 +191,25 @@ export default function ListsScreen({
     } catch (error) {
       console.error('Failed to create list:', error);
       
-      // TICKET 12: User-friendly error messages
+      // TICKET 12 FINAL: User-friendly error with focus affordance
       const message = error instanceof Error ? error.message : getUserFriendlyError(error);
-      Alert.alert('Cannot Create List', message);
+      Alert.alert('Cannot Create List', message, [
+        {
+          text: 'OK',
+          onPress: () => {
+            // Focus and select text for easy correction
+            setTimeout(() => {
+              listNameInputRef.current?.focus();
+              // Select all text so user can easily type new name
+              if (Platform.OS === 'ios') {
+                listNameInputRef.current?.setNativeProps({
+                  selection: { start: 0, end: newListName.length },
+                });
+              }
+            }, 100);
+          },
+        },
+      ]);
     }
   };
 
@@ -1521,6 +1548,7 @@ export default function ListsScreen({
                 <Text style={styles.modalTitle}>Create List</Text>
 
                 <TextInput
+                  ref={listNameInputRef}
                   style={styles.input}
                   placeholder="List name"
                   value={newListName}
