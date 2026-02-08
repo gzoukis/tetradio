@@ -155,6 +155,7 @@ export default function TasksScreen({ goToLists }: { goToLists: () => void }) {
         }
       );
     } else {
+      // FIXED: Android - use SelectionMenu for priority, not Alert
       Alert.alert(
         task.title,
         'What would you like to do?',
@@ -184,16 +185,9 @@ export default function TasksScreen({ goToLists }: { goToLists: () => void }) {
           { 
             text: 'Change Priority', 
             onPress: () => {
-              Alert.alert(
-                'Set Priority',
-                'Choose priority level',
-                [
-                  { text: '🔵 Focus', onPress: () => handleSetPriority(task, 1) },
-                  { text: '⚪ Normal', onPress: () => handleSetPriority(task, 2) },
-                  { text: '⚫ Low key', onPress: () => handleSetPriority(task, 3) },
-                ],
-                { cancelable: true }
-              );
+              // FIXED: Use SelectionMenu instead of nested Alert
+              setSelectedTaskForPriority(task);
+              setPriorityMenuVisible(true);
             }
           },
         ],

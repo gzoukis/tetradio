@@ -2133,6 +2133,7 @@ const styles = StyleSheet.create({
     padding: 20,
     minHeight: 320, // FIXED: Ensure minimum space for title + 3 items + buttons
     maxHeight: 600, // FIXED: Absolute max instead of percentage
+    marginBottom: 80, // FIXED: Lift modal above Android navigation buttons
   },
   listPickerTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 16 },
   listPickerScroll: {
