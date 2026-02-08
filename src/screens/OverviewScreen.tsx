@@ -792,7 +792,7 @@ const styles = StyleSheet.create({
     minWidth: 300,
     maxWidth: 400,
     width: '90%',
-    maxHeight: '80%',
+    maxHeight: '90%',  // Safety valve - allow up to 90% of screen
   },
   modalContentInner: {
     padding: 20,
@@ -914,17 +914,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 16,
     padding: 20,
-    minHeight: 320,
-    maxHeight: 600,
     minWidth: 300,
     maxWidth: 400,
     width: '90%',
+    maxHeight: '70%',  // Reasonable max for list pickers
     overflow: 'hidden',
   },
   listPickerTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 16 },
   listPickerScroll: {
-    flex: 1,
-    minHeight: 200,
+    maxHeight: 300,  // Fixed max height for scrollable area
   },
   listPickerItem: {
     paddingVertical: 16,
