@@ -415,7 +415,7 @@ export default function OverviewScreen({
       {/* Quick Create Modal */}
       <Modal
         visible={modalVisible}
-        animationType="slide"
+        animationType="fade"
         transparent
         onRequestClose={handleCloseModal}
       >
@@ -433,12 +433,13 @@ export default function OverviewScreen({
               activeOpacity={1}
               onPress={e => e.stopPropagation()}
             >
-              <ScrollView
-                style={styles.modalContent}
-                contentContainerStyle={styles.modalContentInner}
-                keyboardShouldPersistTaps="handled"
-                bounces={false}
-              >
+              <View style={styles.modalContent}>
+                <ScrollView
+                  contentContainerStyle={styles.modalContentInner}
+                  keyboardShouldPersistTaps="handled"
+                  bounces={false}
+                  showsVerticalScrollIndicator={false}
+                >
                 {quickCreateMode === 'entry' ? (
                   <>
                     {/* Entry Creation Mode */}
@@ -628,6 +629,7 @@ export default function OverviewScreen({
                   </>
                 )}
               </ScrollView>
+              </View>
             </TouchableOpacity>
           </TouchableOpacity>
         </KeyboardAvoidingView>
@@ -786,8 +788,11 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderRadius: 16,
+    minWidth: 300,
+    maxWidth: 400,
+    width: '90%',
+    maxHeight: '80%',
   },
   modalContentInner: {
     padding: 20,

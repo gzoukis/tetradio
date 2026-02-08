@@ -1244,7 +1244,7 @@ export default function ListsScreen({
         {/* Entry Creation Modal */}
         <Modal
           visible={entryModalVisible}
-          animationType="slide"
+          animationType="fade"
           transparent
           onRequestClose={() => setEntryModalVisible(false)}
         >
@@ -1597,7 +1597,7 @@ export default function ListsScreen({
 
       <Modal
         visible={modalVisible}
-        animationType="slide"
+        animationType="fade"
         transparent
         onRequestClose={() => setModalVisible(false)}
       >
@@ -1665,7 +1665,7 @@ export default function ListsScreen({
       {/* TICKET 13: Rename List Modal */}
       <Modal
         visible={renameModalVisible}
-        animationType="slide"
+        animationType="fade"
         transparent
         onRequestClose={handleCloseRenameModal}
       >
@@ -2029,10 +2029,13 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderRadius: 16,
     padding: 20,
     paddingBottom: 40,
+    minWidth: 300,
+    maxWidth: 400,
+    width: '90%',
+    maxHeight: '80%',
   },
   typeSelectorContainer: {
     flexDirection: 'row',
