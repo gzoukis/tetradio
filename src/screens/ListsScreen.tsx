@@ -1765,7 +1765,6 @@ export default function ListsScreen({
         />
       )}
 
-            {/* Priority Selection Menu */}
       <SelectionMenu
         visible={priorityMenuVisible}
         onClose={() => {
