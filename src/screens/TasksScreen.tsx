@@ -375,7 +375,7 @@ export default function TasksScreen({ goToLists }: { goToLists: () => void }) {
         }
         contentContainerStyle={styles.taskList}
         stickySectionHeadersEnabled={false}
-
+        />
         <SelectionMenu
           visible={priorityMenuVisible}
           onClose={() => {
