@@ -3,6 +3,7 @@ import NoteCard from '../components/NoteCard';
 import NoteEditor from '../components/NoteEditor';
 import ChecklistScreen from './ChecklistScreen';
 import ActionMenu, { ActionMenuItem } from '../components/ActionMenu';
+import SelectionMenu, { SelectionOption } from '../components/SelectionMenu';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -91,6 +92,8 @@ export default function ListsScreen({
   // TICKET 13 FIX: Custom action menu state
   const [actionMenuVisible, setActionMenuVisible] = useState(false);
   const [actionMenuList, setActionMenuList] = useState<List | null>(null);
+  const [priorityMenuVisible, setPriorityMenuVisible] = useState(false);
+  const [selectedTaskForPriority, setSelectedTaskForPriority] = useState<Task | null>(null);
 
   useEffect(() => {
     loadLists();
@@ -604,17 +607,8 @@ export default function ListsScreen({
           if (buttonIndex === 1) {
             handleOpenMoveModal(task);
           } else if (buttonIndex === 2) {
-            ActionSheetIOS.showActionSheetWithOptions(
-              {
-                options: ['Cancel', 'Focus', 'Normal', 'Low key'],
-                cancelButtonIndex: 0,
-              },
-              (priorityIndex) => {
-                if (priorityIndex === 1) handleSetPriority(task, 1);
-                else if (priorityIndex === 2) handleSetPriority(task, 2);
-                else if (priorityIndex === 3) handleSetPriority(task, 3);
-              }
-            );
+              setSelectedTaskForPriority(task);
+              setPriorityMenuVisible(true);
           } else if (buttonIndex === 3) {
             handleDeleteEntry(task);
           }
@@ -1770,6 +1764,43 @@ export default function ListsScreen({
           })()}
         />
       )}
+
+            {/* Priority Selection Menu */}
+      <SelectionMenu
+        visible={priorityMenuVisible}
+        onClose={() => {
+          setPriorityMenuVisible(false);
+          setSelectedTaskForPriority(null);
+        }}
+        title="Set Priority"
+        subtitle="Choose priority level"
+        options={[
+          {
+            label: 'Focus',
+            value: 1,
+            color: '#3b82f6',
+            description: 'High importance',
+          },
+          {
+            label: 'Normal',
+            value: 2,
+            color: '#9ca3af',
+            description: 'Standard priority',
+          },
+          {
+            label: 'Low key',
+            value: 3,
+            color: '#6b7280',
+            description: 'Low priority',
+          },
+        ]}
+        selectedValue={selectedTaskForPriority?.calm_priority ?? 2}
+        onSelect={(value) => {
+          if (selectedTaskForPriority) {
+            handleSetPriority(selectedTaskForPriority, value);
+          }
+        }}
+      />
     </View>
   );
 }

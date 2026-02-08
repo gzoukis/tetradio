@@ -909,10 +909,14 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
+    minHeight: 250,
     maxHeight: '70%',
   },
   listPickerTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 16 },
-  listPickerScroll: { maxHeight: 300 },
+  listPickerScroll: {
+  minHeight: 200, // Ensure minimum 3 options visible
+  maxHeight: 400, // Allow more scrolling if needed
+  },
   listPickerItem: {
     paddingVertical: 16,
     paddingHorizontal: 12,

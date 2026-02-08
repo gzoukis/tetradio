@@ -1,4 +1,5 @@
 import DatePickerButton from '../components/DatePickerButton';
+import SelectionMenu, { SelectionOption } from '../components/SelectionMenu';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -27,6 +28,8 @@ export default function TasksScreen({ goToLists }: { goToLists: () => void }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [completedCollapsed, setCompletedCollapsed] = useState(true);
+  const [priorityMenuVisible, setPriorityMenuVisible] = useState(false);
+  const [selectedTaskForPriority, setSelectedTaskForPriority] = useState<TaskWithListName | null>(null);
 
   useEffect(() => {
     loadTasks();
@@ -130,17 +133,8 @@ export default function TasksScreen({ goToLists }: { goToLists: () => void }) {
         },
         (buttonIndex) => {
           if (buttonIndex === 1) {
-            ActionSheetIOS.showActionSheetWithOptions(
-              {
-                options: ['Cancel', 'Focus', 'Normal', 'Low key'],
-                cancelButtonIndex: 0,
-              },
-              (priorityIndex) => {
-                if (priorityIndex === 1) handleSetPriority(task, 1);
-                else if (priorityIndex === 2) handleSetPriority(task, 2);
-                else if (priorityIndex === 3) handleSetPriority(task, 3);
-              }
-            );
+            setSelectedTaskForPriority(task);
+            setPriorityMenuVisible(true);
           } else if (buttonIndex === 2) {
             Alert.alert(
               'Delete Task',
@@ -381,6 +375,42 @@ export default function TasksScreen({ goToLists }: { goToLists: () => void }) {
         }
         contentContainerStyle={styles.taskList}
         stickySectionHeadersEnabled={false}
+
+        {/* Priority Selection Menu */}
+        <SelectionMenu
+          visible={priorityMenuVisible}
+          onClose={() => {
+            setPriorityMenuVisible(false);
+            setSelectedTaskForPriority(null);
+          }}
+          title="Set Priority"
+          subtitle="Choose priority level"
+          options={[
+            {
+              label: 'Focus',
+              value: 1,
+              color: '#3b82f6',
+              description: 'High importance',
+            },
+            {
+              label: 'Normal',
+              value: 2,
+              color: '#9ca3af',
+              description: 'Standard priority',
+            },
+            {
+              label: 'Low key',
+              value: 3,
+              color: '#6b7280',
+              description: 'Low priority',
+            },
+          ]}
+          selectedValue={selectedTaskForPriority?.calm_priority ?? 2}
+          onSelect={(value) => {
+            if (selectedTaskForPriority) {
+              handleSetPriority(selectedTaskForPriority, value);
+            }
+          }}
       />
     </View>
   );

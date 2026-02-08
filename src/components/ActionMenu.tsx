@@ -7,8 +7,8 @@ import {
   TouchableOpacity,
   ScrollView,
   Platform,
-  SafeAreaView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export interface ActionMenuItem {
   label: string;
@@ -53,6 +53,8 @@ interface ActionMenuProps {
  * ```
  */
 export default function ActionMenu({ visible, onClose, title, items }: ActionMenuProps) {
+  const insets = useSafeAreaInsets();
+  
   return (
     <Modal
       visible={visible}
@@ -66,69 +68,70 @@ export default function ActionMenu({ visible, onClose, title, items }: ActionMen
         activeOpacity={1}
         onPress={onClose}
       >
-        {/* Safe area wrapper - handles device-specific insets */}
-        <SafeAreaView style={styles.safeArea}>
-          {/* Menu content - prevent dismiss on tap */}
-          <TouchableOpacity
-            activeOpacity={1}
-            onPress={(e) => e.stopPropagation()}
-            style={Platform.OS === 'ios' ? styles.menuContainerCentered : styles.menuContainerBottom}
-          >
-            <View style={styles.menu}>
-              {/* Title (optional) */}
-              {title && (
-                <View style={styles.header}>
-                  <Text style={styles.title}>{title}</Text>
-                </View>
-              )}
+        {/* Menu content - prevent dismiss on tap */}
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={(e) => e.stopPropagation()}
+          style={[
+            Platform.OS === 'ios' ? styles.menuContainerCentered : styles.menuContainerBottom,
+            // Add bottom padding for safe area (Android navigation, iOS home indicator)
+            Platform.OS === 'android' && { paddingBottom: Math.max(insets.bottom, 16) }
+          ]}
+        >
+          <View style={styles.menu}>
+            {/* Title (optional) */}
+            {title && (
+              <View style={styles.header}>
+                <Text style={styles.title}>{title}</Text>
+              </View>
+            )}
 
-              {/* Menu items (scrollable) */}
-              <ScrollView
-                style={styles.itemsContainer}
-                bounces={false}
-                showsVerticalScrollIndicator={false}
-              >
-                {items.map((item, index) => (
-                  <TouchableOpacity
-                    key={index}
+            {/* Menu items (scrollable) */}
+            <ScrollView
+              style={styles.itemsContainer}
+              bounces={false}
+              showsVerticalScrollIndicator={false}
+            >
+              {items.map((item, index) => (
+                <TouchableOpacity
+                  key={index}
+                  style={[
+                    styles.item,
+                    index === 0 && !title && styles.itemFirst,
+                    index === items.length - 1 && styles.itemLast,
+                  ]}
+                  onPress={() => {
+                    onClose();
+                    // Delay action slightly to let modal close smoothly
+                    setTimeout(() => item.onPress(), 150);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  {item.icon && (
+                    <Text style={styles.icon}>{item.icon}</Text>
+                  )}
+                  <Text
                     style={[
-                      styles.item,
-                      index === 0 && !title && styles.itemFirst,
-                      index === items.length - 1 && styles.itemLast,
+                      styles.label,
+                      item.destructive && styles.labelDestructive,
                     ]}
-                    onPress={() => {
-                      onClose();
-                      // Delay action slightly to let modal close smoothly
-                      setTimeout(() => item.onPress(), 150);
-                    }}
-                    activeOpacity={0.7}
                   >
-                    {item.icon && (
-                      <Text style={styles.icon}>{item.icon}</Text>
-                    )}
-                    <Text
-                      style={[
-                        styles.label,
-                        item.destructive && styles.labelDestructive,
-                      ]}
-                    >
-                      {item.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+                    {item.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
 
-              {/* Cancel button (always at bottom) */}
-              <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={onClose}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        </SafeAreaView>
+            {/* Cancel button (always at bottom) */}
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={onClose}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
       </TouchableOpacity>
     </Modal>
   );
@@ -138,10 +141,6 @@ const styles = StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.4)',
-    justifyContent: Platform.OS === 'ios' ? 'center' : 'flex-end',
-  },
-  safeArea: {
-    flex: 1,
     justifyContent: Platform.OS === 'ios' ? 'center' : 'flex-end',
   },
   // Android: Bottom sheet (Material Design)
@@ -157,6 +156,7 @@ const styles = StyleSheet.create({
   menu: {
     backgroundColor: '#fff',
     borderRadius: 16,
+    minHeight: 200, // Ensure minimum 3 options visible (3 × ~56px + header/cancel)
     maxHeight: '80%', // Prevent overflow on small screens
     minWidth: Platform.OS === 'ios' ? 300 : undefined,
     maxWidth: Platform.OS === 'ios' ? 400 : undefined,
@@ -177,7 +177,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   itemsContainer: {
-    maxHeight: 400, // Scroll if more than ~7 items
+    // No maxHeight - let all items show if space available
+    // Scrolling handled by menu maxHeight: '80%'
   },
   item: {
     flexDirection: 'row',
