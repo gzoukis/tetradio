@@ -1446,7 +1446,7 @@ export default function ListsScreen({
         {/* TICKET 9D: Move to List Modal */}
         <Modal
           visible={moveModalVisible}
-          animationType="slide"
+          animationType="fade"
           transparent
           onRequestClose={handleCloseMoveModal}
         >
@@ -2022,8 +2022,10 @@ const styles = StyleSheet.create({
   modalContainer: { flex: 1 },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 16,
   },
   modalContent: {
     backgroundColor: '#fff',
@@ -2128,17 +2130,19 @@ const styles = StyleSheet.create({
   // Move to List Modal styles
   listPickerContent: {
     backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderRadius: 16,
     padding: 20,
-    minHeight: 320, // FIXED: Ensure minimum space for title + 3 items + buttons
-    maxHeight: 600, // FIXED: Absolute max instead of percentage
-    marginBottom: 120, // INCREASED: 120px clearance above navigation
+    minHeight: 320,
+    maxHeight: 600,
+    minWidth: 300,
+    maxWidth: 400,
+    width: '90%',
+    overflow: 'hidden',
   },
   listPickerTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 16 },
   listPickerScroll: {
-    flex: 1, // FIXED: Take available space
-    minHeight: 200, // FIXED: Minimum 3 options visible
+    flex: 1,
+    minHeight: 200,
   },
   listPickerItem: {
     paddingVertical: 16,

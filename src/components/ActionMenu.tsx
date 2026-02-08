@@ -6,9 +6,7 @@ import {
   Modal,
   TouchableOpacity,
   ScrollView,
-  Platform,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export interface ActionMenuItem {
   label: string;
@@ -25,18 +23,19 @@ interface ActionMenuProps {
 }
 
 /**
- * ActionMenu - Adaptive action menu
+ * ActionMenu - Centered action menu
  * 
- * TICKET 13 FIX: Adaptive positioning
- * - Android: Bottom sheet (Material Design)
- * - iOS: Centered modal (matches ActionSheet)
+ * TICKET 13 VISUAL FIX: Centered positioning (matches SelectionMenu)
+ * - Consistent positioning across all platforms
+ * - Centered modal with rounded corners
+ * - Solid background (no transparency)
+ * - Platform-agnostic design
  * 
  * Features:
  * - Unlimited menu items (scrollable)
  * - Destructive styling (red text)
  * - Optional icons
- * - Platform-consistent design
- * - Safe area aware
+ * - Consistent with SelectionMenu style
  * 
  * Usage:
  * ```tsx
@@ -53,13 +52,11 @@ interface ActionMenuProps {
  * ```
  */
 export default function ActionMenu({ visible, onClose, title, items }: ActionMenuProps) {
-  const insets = useSafeAreaInsets();
-  
   return (
     <Modal
       visible={visible}
       transparent
-      animationType="slide"
+      animationType="fade"
       onRequestClose={onClose}
     >
       {/* Overlay - tap to dismiss */}
@@ -72,11 +69,6 @@ export default function ActionMenu({ visible, onClose, title, items }: ActionMen
         <TouchableOpacity
           activeOpacity={1}
           onPress={(e) => e.stopPropagation()}
-          style={[
-            Platform.OS === 'ios' ? styles.menuContainerCentered : styles.menuContainerBottom,
-            // Add bottom padding for safe area (Android navigation, iOS home indicator)
-            Platform.OS === 'android' && { paddingBottom: Math.max(insets.bottom, 16) }
-          ]}
         >
           <View style={styles.menu}>
             {/* Title (optional) */}
@@ -138,31 +130,28 @@ export default function ActionMenu({ visible, onClose, title, items }: ActionMen
 }
 
 const styles = StyleSheet.create({
+  // === OVERLAY ===
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.4)',
-    justifyContent: Platform.OS === 'ios' ? 'center' : 'flex-end',
-  },
-  // Android: Bottom sheet (Material Design)
-  menuContainerBottom: {
-    justifyContent: 'flex-end',
-  },
-  // iOS: Centered (like ActionSheet)
-  menuContainerCentered: {
+    justifyContent: 'center', // ALWAYS centered
     alignItems: 'center',
-    justifyContent: 'center',
     paddingHorizontal: 16,
   },
+
+  // === MENU ===
   menu: {
     backgroundColor: '#fff',
     borderRadius: 16,
-    minHeight: 280, // FIXED: Absolute height for 3 options (Header 64px + 3×56px items + Cancel 56px)
-    maxHeight: 600, // FIXED: Absolute max instead of percentage (prevents flex shrinkage)
-    minWidth: Platform.OS === 'ios' ? 300 : undefined,
-    maxWidth: Platform.OS === 'ios' ? 400 : undefined,
-    width: Platform.OS === 'ios' ? '90%' : '100%',
+    minHeight: 280, // Minimum for header + 3 items + cancel
+    maxHeight: 600, // Absolute max
+    minWidth: 300,
+    maxWidth: 400,
+    width: '90%',
     overflow: 'hidden',
   },
+
+  // === HEADER ===
   header: {
     paddingVertical: 16,
     paddingHorizontal: 20,
@@ -175,10 +164,14 @@ const styles = StyleSheet.create({
     color: '#1a1a1a',
     textAlign: 'center',
   },
+
+  // === ITEMS CONTAINER ===
   itemsContainer: {
-    flex: 1, // FIXED: Take available space to force minimum height
-    minHeight: 168, // FIXED: Minimum for 3 items (3 × 56px)
+    flex: 1,
+    minHeight: 168, // Minimum for 3 items
   },
+
+  // === ITEM ===
   item: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -189,13 +182,13 @@ const styles = StyleSheet.create({
     minHeight: 56,
   },
   itemFirst: {
-    // First item without title
     borderTopWidth: 0,
   },
   itemLast: {
-    // Last item before cancel
     borderBottomWidth: 0,
   },
+
+  // === ICON & LABEL ===
   icon: {
     fontSize: 20,
     marginRight: 12,
@@ -208,6 +201,8 @@ const styles = StyleSheet.create({
   labelDestructive: {
     color: '#ef4444', // Red for destructive actions
   },
+
+  // === CANCEL BUTTON ===
   cancelButton: {
     paddingVertical: 16,
     paddingHorizontal: 20,
