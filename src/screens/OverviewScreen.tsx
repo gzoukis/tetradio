@@ -909,13 +909,13 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
-    minHeight: 250,
-    maxHeight: '70%',
+    minHeight: 320, // FIXED: Ensure minimum space for title + 3 items + cancel
+    maxHeight: 600, // FIXED: Absolute max instead of percentage
   },
   listPickerTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 16 },
   listPickerScroll: {
-  minHeight: 200, // Ensure minimum 3 options visible
-  maxHeight: 400, // Allow more scrolling if needed
+    flex: 1, // FIXED: Take available space
+    minHeight: 200, // Ensure minimum 3 options visible
   },
   listPickerItem: {
     paddingVertical: 16,

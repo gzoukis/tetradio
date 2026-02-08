@@ -2131,10 +2131,14 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
-    maxHeight: '70%',
+    minHeight: 320, // FIXED: Ensure minimum space for title + 3 items + buttons
+    maxHeight: 600, // FIXED: Absolute max instead of percentage
   },
   listPickerTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 16 },
-  listPickerScroll: { maxHeight: 300 },
+  listPickerScroll: {
+    flex: 1, // FIXED: Take available space
+    minHeight: 200, // FIXED: Minimum 3 options visible
+  },
   listPickerItem: {
     paddingVertical: 16,
     paddingHorizontal: 12,

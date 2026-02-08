@@ -156,12 +156,11 @@ const styles = StyleSheet.create({
   menu: {
     backgroundColor: '#fff',
     borderRadius: 16,
-    minHeight: 200, // Ensure minimum 3 options visible (3 × ~56px + header/cancel)
-    maxHeight: '80%', // Prevent overflow on small screens
+    minHeight: 280, // FIXED: Absolute height for 3 options (Header 64px + 3×56px items + Cancel 56px)
+    maxHeight: 600, // FIXED: Absolute max instead of percentage (prevents flex shrinkage)
     minWidth: Platform.OS === 'ios' ? 300 : undefined,
     maxWidth: Platform.OS === 'ios' ? 400 : undefined,
     width: Platform.OS === 'ios' ? '90%' : '100%',
-    // Remove borderTopLeftRadius/borderTopRightRadius - use consistent borderRadius
     overflow: 'hidden',
   },
   header: {
@@ -177,8 +176,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   itemsContainer: {
-    // No maxHeight - let all items show if space available
-    // Scrolling handled by menu maxHeight: '80%'
+    flex: 1, // FIXED: Take available space to force minimum height
+    minHeight: 168, // FIXED: Minimum for 3 items (3 × 56px)
   },
   item: {
     flexDirection: 'row',

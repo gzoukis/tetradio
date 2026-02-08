@@ -209,8 +209,8 @@ const styles = StyleSheet.create({
   menu: {
     backgroundColor: '#fff',
     borderRadius: 16,
-    minHeight: 200, // Ensure minimum 3 options visible
-    maxHeight: '80%',
+    minHeight: 280, // FIXED: Absolute height for 3 options
+    maxHeight: 600, // FIXED: Absolute max instead of percentage
     minWidth: Platform.OS === 'ios' ? 300 : undefined,
     maxWidth: Platform.OS === 'ios' ? 400 : undefined,
     width: Platform.OS === 'ios' ? '90%' : '100%',
@@ -239,7 +239,8 @@ const styles = StyleSheet.create({
 
   // === OPTIONS CONTAINER ===
   optionsContainer: {
-    // No maxHeight - let all items show if space available
+    flex: 1, // FIXED: Take available space
+    minHeight: 168, // FIXED: Minimum for 3 options
   },
 
   // === OPTION ===
