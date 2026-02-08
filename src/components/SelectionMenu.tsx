@@ -215,6 +215,7 @@ const styles = StyleSheet.create({
     maxWidth: Platform.OS === 'ios' ? 400 : undefined,
     width: Platform.OS === 'ios' ? '90%' : '100%',
     overflow: 'hidden',
+    marginBottom: Platform.OS === 'android' ? 100 : 0, // ADDED: Lift above navigation on Android
   },
 
   // === HEADER ===
@@ -239,8 +240,8 @@ const styles = StyleSheet.create({
 
   // === OPTIONS CONTAINER ===
   optionsContainer: {
-    flex: 1, // FIXED: Take available space
-    minHeight: 168, // FIXED: Minimum for 3 options
+    // REMOVED flex: 1 and minHeight - let content determine height
+    // This prevents forced scrolling when only 3 items
   },
 
   // === OPTION ===

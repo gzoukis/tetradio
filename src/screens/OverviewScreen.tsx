@@ -911,7 +911,7 @@ const styles = StyleSheet.create({
     padding: 20,
     minHeight: 320, // FIXED: Ensure minimum space for title + 3 items + cancel
     maxHeight: 600, // FIXED: Absolute max instead of percentage
-    marginBottom: 80, // FIXED: Lift modal above Android navigation buttons (3-button nav = ~80px)
+    marginBottom: 120, // INCREASED: 120px clearance above navigation (was 80px)
   },
   listPickerTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 16 },
   listPickerScroll: {
