@@ -2030,12 +2030,11 @@ const styles = StyleSheet.create({
   modalContent: {
     backgroundColor: '#fff',
     borderRadius: 16,
-    padding: 20,
-    paddingBottom: 40,
+    padding: 24,  // Equal padding all around
     minWidth: 300,
     maxWidth: 400,
     width: '90%',
-    maxHeight: '90%',  // Safety valve - allow up to 90% of screen
+    maxHeight: '90%',
   },
   typeSelectorContainer: {
     flexDirection: 'row',
@@ -2143,7 +2142,8 @@ const styles = StyleSheet.create({
   },
   listPickerTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 16 },
   listPickerScroll: {
-    maxHeight: 300,  // Fixed max height for scrollable area
+    maxHeight: 200,  // ~3-4 list items visible (was 300)
+    minHeight: 168,  // Minimum 3 items (3 × 56px)
   },
   listPickerItem: {
     paddingVertical: 16,
