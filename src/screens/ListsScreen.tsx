@@ -1244,7 +1244,7 @@ export default function ListsScreen({
         {/* Entry Creation Modal */}
         <Modal
           visible={entryModalVisible}
-          animationType="fade"
+          animationType="slide"
           transparent
           onRequestClose={() => setEntryModalVisible(false)}
         >
@@ -1446,7 +1446,7 @@ export default function ListsScreen({
         {/* TICKET 9D: Move to List Modal */}
         <Modal
           visible={moveModalVisible}
-          animationType="fade"
+          animationType="slide"
           transparent
           onRequestClose={handleCloseMoveModal}
         >
@@ -1597,7 +1597,7 @@ export default function ListsScreen({
 
       <Modal
         visible={modalVisible}
-        animationType="fade"
+        animationType="slide"
         transparent
         onRequestClose={() => setModalVisible(false)}
       >
@@ -1665,7 +1665,7 @@ export default function ListsScreen({
       {/* TICKET 13: Rename List Modal */}
       <Modal
         visible={renameModalVisible}
-        animationType="fade"
+        animationType="slide"
         transparent
         onRequestClose={handleCloseRenameModal}
       >
@@ -2022,19 +2022,15 @@ const styles = StyleSheet.create({
   modalContainer: { flex: 1 },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
   },
   modalContent: {
     backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 24,  // Equal padding all around
-    minWidth: 300,
-    maxWidth: 400,
-    width: '90%',
-    maxHeight: '90%',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    paddingBottom: 40,
   },
   typeSelectorContainer: {
     flexDirection: 'row',
@@ -2132,19 +2128,13 @@ const styles = StyleSheet.create({
   // Move to List Modal styles
   listPickerContent: {
     backgroundColor: '#fff',
-    borderRadius: 16,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     padding: 20,
-    minWidth: 300,
-    maxWidth: 400,
-    width: '90%',
-    maxHeight: '70%',  // Reasonable max for list pickers
-    overflow: 'hidden',
+    maxHeight: '70%',
   },
   listPickerTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 16 },
-  listPickerScroll: {
-    maxHeight: 200,  // ~3-4 list items visible (was 300)
-    minHeight: 168,  // Minimum 3 items (3 × 56px)
-  },
+  listPickerScroll: { maxHeight: 300 },
   listPickerItem: {
     paddingVertical: 16,
     paddingHorizontal: 12,
