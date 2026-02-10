@@ -415,7 +415,7 @@ export default function OverviewScreen({
       {/* Quick Create Modal */}
       <Modal
         visible={modalVisible}
-        animationType="slide"
+        animationType="fade"
         transparent
         onRequestClose={handleCloseModal}
       >
@@ -433,12 +433,13 @@ export default function OverviewScreen({
               activeOpacity={1}
               onPress={e => e.stopPropagation()}
             >
-              <ScrollView
-                style={styles.modalContent}
-                contentContainerStyle={styles.modalContentInner}
-                keyboardShouldPersistTaps="handled"
-                bounces={false}
-              >
+              <View style={styles.modalContent}>
+                <ScrollView
+                  contentContainerStyle={styles.modalContentInner}
+                  keyboardShouldPersistTaps="handled"
+                  bounces={false}
+                  showsVerticalScrollIndicator={false}
+                >
                 {quickCreateMode === 'entry' ? (
                   <>
                     {/* Entry Creation Mode */}
@@ -628,6 +629,7 @@ export default function OverviewScreen({
                   </>
                 )}
               </ScrollView>
+              </View>
             </TouchableOpacity>
           </TouchableOpacity>
         </KeyboardAvoidingView>
@@ -636,7 +638,7 @@ export default function OverviewScreen({
       {/* List Picker Modal */}
       <Modal
         visible={listPickerVisible}
-        animationType="slide"
+        animationType="fade"
         transparent
         onRequestClose={() => setListPickerVisible(false)}
       >
@@ -779,18 +781,21 @@ const styles = StyleSheet.create({
   modalContainer: { flex: 1 },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-    paddingTop: 100,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 16,
   },
   modalContent: {
     backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderRadius: 16,
+    minWidth: 300,
+    maxWidth: 400,
+    width: '90%',
+    maxHeight: '80%',  // More conservative for button visibility
   },
   modalContentInner: {
-    padding: 20,
-    paddingBottom: 60,
+    padding: 24,  // Equal padding all around
   },
   
   // Type selector
@@ -906,15 +911,17 @@ const styles = StyleSheet.create({
   // List Picker Modal
   listPickerContent: {
     backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderRadius: 16,
     padding: 20,
-    minHeight: 250,
-    maxHeight: '70%',
+    minWidth: 300,
+    maxWidth: 400,
+    width: '90%',
+    maxHeight: '70%',  // Back to 70%, works with explicit scroll height
+    overflow: 'hidden',
   },
   listPickerTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 16 },
   listPickerScroll: {
-    maxHeight: 300, // Scrolls if needed, buttons stay visible
+    maxHeight: 250,  // Explicit height, allows scrolling
   },
   listPickerItem: {
     paddingVertical: 16,

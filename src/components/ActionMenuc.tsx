@@ -7,13 +7,12 @@ import {
   TouchableOpacity,
   ScrollView,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export interface ActionMenuItem {
   label: string;
   onPress: () => void;
   destructive?: boolean;
-  icon?: string;
+  icon?: string;  // Emoji or icon
 }
 
 interface ActionMenuProps {
@@ -23,14 +22,36 @@ interface ActionMenuProps {
   items: ActionMenuItem[];
 }
 
-export default function ActionMenu({
-  visible,
-  onClose,
-  title,
-  items,
-}: ActionMenuProps) {
-  const insets = useSafeAreaInsets();
-
+/**
+ * ActionMenu - Centered action menu
+ * 
+ * TICKET 13 VISUAL FIX: Centered positioning (matches SelectionMenu)
+ * - Consistent positioning across all platforms
+ * - Centered modal with rounded corners
+ * - Solid background (no transparency)
+ * - Platform-agnostic design
+ * 
+ * Features:
+ * - Unlimited menu items (scrollable)
+ * - Destructive styling (red text)
+ * - Optional icons
+ * - Consistent with SelectionMenu style
+ * 
+ * Usage:
+ * ```tsx
+ * <ActionMenu
+ *   visible={menuVisible}
+ *   onClose={() => setMenuVisible(false)}
+ *   title="List Name"
+ *   items={[
+ *     { label: 'Rename', onPress: handleRename },
+ *     { label: 'Pin to Top', onPress: handlePin },
+ *     { label: 'Delete', onPress: handleDelete, destructive: true },
+ *   ]}
+ * />
+ * ```
+ */
+export default function ActionMenu({ visible, onClose, title, items }: ActionMenuProps) {
   return (
     <Modal
       visible={visible}
@@ -38,24 +59,28 @@ export default function ActionMenu({
       animationType="fade"
       onRequestClose={onClose}
     >
+      {/* Overlay - tap to dismiss */}
       <TouchableOpacity
         style={styles.overlay}
         activeOpacity={1}
         onPress={onClose}
       >
-        <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
+        {/* Menu content - prevent dismiss on tap */}
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={(e) => e.stopPropagation()}
+        >
           <View style={styles.menu}>
-            {/* Header */}
+            {/* Title (optional) */}
             {title && (
               <View style={styles.header}>
                 <Text style={styles.title}>{title}</Text>
               </View>
             )}
 
-            {/* Scrollable items */}
+            {/* Menu items (scrollable) */}
             <ScrollView
-              style={styles.scroll}
-              contentContainerStyle={styles.scrollContent}
+              style={styles.itemsContainer}
               bounces={false}
               showsVerticalScrollIndicator={false}
             >
@@ -64,15 +89,19 @@ export default function ActionMenu({
                   key={index}
                   style={[
                     styles.item,
+                    index === 0 && !title && styles.itemFirst,
                     index === items.length - 1 && styles.itemLast,
                   ]}
                   onPress={() => {
                     onClose();
-                    setTimeout(item.onPress, 150);
+                    // Delay action slightly to let modal close smoothly
+                    setTimeout(() => item.onPress(), 150);
                   }}
                   activeOpacity={0.7}
                 >
-                  {item.icon && <Text style={styles.icon}>{item.icon}</Text>}
+                  {item.icon && (
+                    <Text style={styles.icon}>{item.icon}</Text>
+                  )}
                   <Text
                     style={[
                       styles.label,
@@ -85,16 +114,14 @@ export default function ActionMenu({
               ))}
             </ScrollView>
 
-            {/* Cancel */}
-            <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-              <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={onClose}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
+            {/* Cancel button (always at bottom) */}
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={onClose}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
           </View>
         </TouchableOpacity>
       </TouchableOpacity>
@@ -103,45 +130,48 @@ export default function ActionMenu({
 }
 
 const styles = StyleSheet.create({
+  // === OVERLAY ===
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: 'center', // ALWAYS centered
     alignItems: 'center',
     paddingHorizontal: 16,
   },
 
+  // === MENU ===
   menu: {
     backgroundColor: '#fff',
     borderRadius: 16,
-    width: '90%',
+    minHeight: 280, // Minimum for header + 3 items + cancel
+    maxHeight: 600, // Absolute max
+    minWidth: 300,
     maxWidth: 400,
-    maxHeight: '80%',
+    width: '90%',
     overflow: 'hidden',
   },
 
+  // === HEADER ===
   header: {
     paddingVertical: 16,
     paddingHorizontal: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#f3f4f6',
   },
-
   title: {
     fontSize: 16,
     fontWeight: '600',
-    textAlign: 'center',
     color: '#1a1a1a',
+    textAlign: 'center',
   },
 
-  scroll: {
-    maxHeight: 300,
+  // === ITEMS CONTAINER ===
+  itemsContainer: {
+    flex: 1,
+    minHeight: 168, // Minimum for 3 items
   },
 
-  scrollContent: {
-    paddingVertical: 4,
-  },
-
+  // === ITEM ===
   item: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -151,40 +181,41 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f3f4f6',
     minHeight: 56,
   },
-
+  itemFirst: {
+    borderTopWidth: 0,
+  },
   itemLast: {
     borderBottomWidth: 0,
   },
 
+  // === ICON & LABEL ===
   icon: {
     fontSize: 20,
     marginRight: 12,
   },
-
   label: {
     fontSize: 16,
-    fontWeight: '500',
     color: '#1a1a1a',
+    fontWeight: '500',
   },
-
   labelDestructive: {
-    color: '#ef4444',
+    color: '#ef4444', // Red for destructive actions
   },
 
-  footer: {
+  // === CANCEL BUTTON ===
+  cancelButton: {
+    paddingVertical: 16,
+    paddingHorizontal: 20,
     borderTopWidth: 1,
     borderTopColor: '#e5e7eb',
     backgroundColor: '#f9fafb',
-  },
-
-  cancelButton: {
-    paddingVertical: 16,
+    minHeight: 56,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-
   cancelText: {
     fontSize: 16,
-    fontWeight: '600',
     color: '#6b7280',
+    fontWeight: '600',
   },
 });
