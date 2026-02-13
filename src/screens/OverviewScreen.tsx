@@ -13,25 +13,25 @@ import {
   Platform,
   Alert,
 } from 'react-native';
-import { getAllActiveTasks, getAllLists, createTask, createNote, getOrCreateUnsortedList, createList } from '../db/operations';
+import { getAllActiveTasks, getAllCollections, createTask, createNote, getOrCreateUnsortedCollection, createCollection } from '../db/operations';
 import { createChecklistWithItems } from '../db/operations';
-import type { TaskWithListName } from '../db/operations';
-import type { List } from '../types/models';
+import type { TaskWithCollectionName } from '../db/operations';
+import type { Collection } from '../types/models';
 import { groupTasksByTime } from '../utils/timeClassification';
 import { getPriorityLabel } from '../utils/formatting';
 
 type EntryType = 'task' | 'note' | 'checklist';
-type QuickCreateMode = 'entry' | 'new-list';
+type QuickCreateMode = 'entry' | 'new-collection';
 
 export default function OverviewScreen({
   onViewTasks,
-  goToLists,
+  goToCollections,
 }: {
   onViewTasks: () => void;
-  goToLists: (listId?: string) => void;
+  goToCollections: (collectionId?: string) => void;
 }) {
-  const [tasks, setTasks] = useState<TaskWithListName[]>([]);
-  const [pinnedLists, setPinnedLists] = useState<List[]>([]);
+  const [tasks, setTasks] = useState<TaskWithCollectionName[]>([]);
+  const [pinnedCollections, setPinnedCollections] = useState<Collection[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   
@@ -41,22 +41,22 @@ export default function OverviewScreen({
   const [entryType, setEntryType] = useState<EntryType>('task');
   const [entryTitle, setEntryTitle] = useState('');
   const [entryBody, setEntryBody] = useState(''); // For notes
-  const [selectedList, setSelectedList] = useState<List | null>(null);
+  const [selectedCollection, setSelectedCollection] = useState<Collection | null>(null);
   const [taskDueDate, setTaskDueDate] = useState<number | undefined>(undefined);
   const [taskPriority, setTaskPriority] = useState<number>(2);
   const [checklistItems, setChecklistItems] = useState<string[]>(['', '', '']);
   
-  // Lists for picker
-  const [allLists, setAllLists] = useState<List[]>([]);
-  const [listPickerVisible, setListPickerVisible] = useState(false);
+  // Collections for picker
+  const [allCollections, setAllCollections] = useState<Collection[]>([]);
+  const [collectionPickerVisible, setCollectionPickerVisible] = useState(false);
   
-  // New List form (inline)
-  const [newListName, setNewListName] = useState('');
+  // New Collection form (inline)
+  const [newCollectionName, setNewCollectionName] = useState('');
 
   useEffect(() => {
     loadTasks();
-    loadLists();
-    loadPinnedLists();
+    loadCollections();
+    loadPinnedCollections();
   }, []);
 
   const loadTasks = async () => {
@@ -71,42 +71,42 @@ export default function OverviewScreen({
     }
   };
   
-  const loadLists = async () => {
+  const loadCollections = async () => {
     try {
-      const lists = await getAllLists();
-      console.log(`�‹ Loaded ${lists.length} total lists from database`);
+      const collections = await getAllCollections();
+      console.log(`�‹ Loaded ${collections.length} total collections from database`);
       
-      // Show ONLY user lists in the picker (not system lists like Unsorted)
-      // Unsorted should only appear in Lists screen, not in the picker
-      const userLists = lists.filter(l => !l.is_archived && !l.is_system);
+      // Show ONLY user collections in the picker (not system collections like Unsorted)
+      // Unsorted should only appear in Collections screen, not in the picker
+      const userCollections = collections.filter(l => !l.is_archived && !l.is_system);
       
-      console.log(`✅ User lists for picker: ${userLists.length}`);
-      userLists.forEach(list => {
-        console.log(`  - ${list.icon} ${list.name}`);
+      console.log(`✅ User collections for picker: ${userCollections.length}`);
+      userCollections.forEach(collection => {
+        console.log(`  - ${collection.icon} ${collection.name}`);
       });
       
-      setAllLists(userLists);
+      setAllCollections(userCollections);
     } catch (error) {
-      console.error('âŒ Failed to load lists:', error);
+      console.error('âŒ Failed to load collections:', error);
     }
   };
 
-  const loadPinnedLists = async () => {
+  const loadPinnedCollections = async () => {
     try {
-      const lists = await getAllLists();
-      const pinned = lists.filter(l => l.is_pinned && !l.is_system && !l.is_archived)
+      const collections = await getAllCollections();
+      const pinned = collections.filter(l => l.is_pinned && !l.is_system && !l.is_archived)
         .sort((a, b) => a.sort_order - b.sort_order);
-      setPinnedLists(pinned);
+      setPinnedCollections(pinned);
     } catch (error) {
-      console.error('Failed to load pinned lists:', error);
+      console.error('Failed to load pinned collections:', error);
     }
   };
 
   const handleRefresh = async () => {
     setRefreshing(true);
     await loadTasks();
-    await loadLists();
-    await loadPinnedLists();
+    await loadCollections();
+    await loadPinnedCollections();
     setRefreshing(false);
   };
   
@@ -116,11 +116,11 @@ export default function OverviewScreen({
     setEntryType('task');
     setEntryTitle('');
     setEntryBody('');
-    setSelectedList(null);
+    setSelectedCollection(null);
     setTaskDueDate(undefined);
     setTaskPriority(2);
     setChecklistItems(['', '', '']);
-    setNewListName('');
+    setNewCollectionName('');
     setModalVisible(true);
   };
   
@@ -129,41 +129,41 @@ export default function OverviewScreen({
     setQuickCreateMode('entry');
   };
   
-  const handleSwitchToNewList = () => {
-    setQuickCreateMode('new-list');
+  const handleSwitchToNewCollection = () => {
+    setQuickCreateMode('new-collection');
   };
   
   const handleBackToEntry = () => {
     setQuickCreateMode('entry');
   };
   
-  const handleCreateNewList = async () => {
-    const trimmedName = newListName.trim();
+  const handleCreateNewCollection = async () => {
+    const trimmedName = newCollectionName.trim();
     if (!trimmedName) {
-      Alert.alert('Empty Name', 'Please enter a list name.');
+      Alert.alert('Empty Name', 'Please enter a collection name.');
       return;
     }
     
     try {
-      const newList = await createList({
+      const newCollection = await createCollection({
         name: trimmedName,
-        sort_order: allLists.length,
+        sort_order: allCollections.length,
         is_pinned: false,
         is_archived: false,
       });
       
       // Add to local state
-      setAllLists([...allLists, newList]);
+      setAllCollections([...allCollections, newCollection]);
       
       // Select the new list
-      setSelectedList(newList);
+      setSelectedCollection(newCollection);
       
       // Switch back to entry mode
-      setNewListName('');
+      setNewCollectionName('');
       setQuickCreateMode('entry');
     } catch (error) {
-      console.error('Failed to create list:', error);
-      Alert.alert('Error', 'Unable to create list. Please try again.');
+      console.error('Failed to create collection:', error);
+      Alert.alert('Error', 'Unable to create collection. Please try again.');
     }
   };
   
@@ -175,28 +175,28 @@ export default function OverviewScreen({
     }
     
     try {
-      let listId: string | undefined = selectedList?.id;
+      let collectionId: string | undefined = selectedCollection?.id;
       
       // If no list selected, get or create Unsorted
-      if (!listId) {
-        console.log('� No list selected, calling getOrCreateUnsortedList...');
-        const unsortedList = await getOrCreateUnsortedList();
-        listId = unsortedList.id;
-        console.log('✅ Unsorted list obtained:', {
-          id: unsortedList.id,
-          name: unsortedList.name,
-          icon: unsortedList.icon,
-          is_system: unsortedList.is_system,
-          deleted_at: unsortedList.deleted_at,
+      if (!collectionId) {
+        console.log('� No list selected, calling getOrCreateUnsortedCollection...');
+        const unsortedCollection = await getOrCreateUnsortedCollection();
+        collectionId = unsortedCollection.id;
+        console.log('✅ Unsorted collection obtained:', {
+          id: unsortedCollection.id,
+          name: unsortedCollection.name,
+          icon: unsortedCollection.icon,
+          is_system: unsortedCollection.is_system,
+          deleted_at: unsortedCollection.deleted_at,
         });
       } else {
-        console.log('� Using selected list:', selectedList?.name);
+        console.log('� Using selected collection:', selectedCollection?.name);
       }
       
       if (entryType === 'task') {
         await createTask({
           title: trimmedTitle,
-          list_id: listId,
+          collection_id: collectionId,
           due_date: taskDueDate,
           calm_priority: taskPriority,
           completed: false,
@@ -205,7 +205,7 @@ export default function OverviewScreen({
         await createNote({
           title: trimmedTitle,
           notes: entryBody.trim() || undefined,
-          list_id: listId,
+          collection_id: collectionId,
         });
       } else if (entryType === 'checklist') {
         const validItems = checklistItems.filter(item => item.trim() !== '');
@@ -216,16 +216,16 @@ export default function OverviewScreen({
         
         await createChecklistWithItems({
           title: trimmedTitle,
-          list_id: listId,
+          collection_id: collectionId,
           items: validItems,
         });
       }
       
-      console.log(`� Creating ${entryType} with list_id: ${listId}`);
+      console.log(`� Creating ${entryType} with collection_id: ${collectionId}`);
       
       handleCloseModal();
       await loadTasks();
-      await loadLists();
+      await loadCollections();
       
       console.log('✅ Entry created, screens refreshed');
     } catch (error) {
@@ -252,7 +252,7 @@ export default function OverviewScreen({
 
   const grouped = groupTasksByTime(tasks);
 
-  const renderTaskPreview = (task: TaskWithListName) => (
+  const renderTaskPreview = (task: TaskWithCollectionName) => (
     <View key={task.id} style={styles.taskPreview}>
       <Text style={styles.taskPreviewTitle} numberOfLines={1}>
         • {task.title}
@@ -364,30 +364,30 @@ export default function OverviewScreen({
         )}
 
 
-        {/* Pinned Lists */}
-        {pinnedLists.length > 0 ? (
+        {/* Pinned Collections */}
+        {pinnedCollections.length > 0 ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>
-              📌 Pinned Lists ({pinnedLists.length})
+              📌 Pinned Collections ({pinnedCollections.length})
             </Text>
-            {pinnedLists.map(list => (
+            {pinnedCollections.map(collection => (
               <TouchableOpacity
-                key={list.id}
+                key={collection.id}
                 style={styles.pinnedListRow}
-                onPress={() => goToLists(list.id)}
+                onPress={() => goToCollections(collection.id)}
                 activeOpacity={0.7}
               >
-                <Text style={styles.pinnedListIcon}>{list.icon || '📋'}</Text>
-                <Text style={styles.pinnedListName}>{list.name}</Text>
+                <Text style={styles.pinnedListIcon}>{collection.icon || '📋'}</Text>
+                <Text style={styles.pinnedListName}>{collection.name}</Text>
                 <Text style={styles.chevron}>›</Text>
               </TouchableOpacity>
             ))}
           </View>
         ) : (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>📌 Pinned Lists</Text>
+            <Text style={styles.sectionTitle}>📌 Pinned Collections</Text>
             <Text style={styles.emptyMessage}>
-              No pinned lists yet. Long-press a list in the Lists tab to pin it.
+              No pinned collections yet. Long-press a collection in the Collections tab to pin it.
             </Text>
           </View>
         )}
@@ -479,10 +479,10 @@ export default function OverviewScreen({
                     {/* Optional List Assignment */}
                     <TouchableOpacity
                       style={styles.listPickerButton}
-                      onPress={() => setListPickerVisible(true)}
+                      onPress={() => setCollectionPickerVisible(true)}
                     >
                       <Text style={styles.listPickerButtonText}>
-                        {selectedList ? `📁 ${selectedList.name}` : '+ Add to List (optional)'}
+                        {selectedCollection ? `📁 ${selectedCollection.name}` : '+ Add to Collection (optional)'}
                       </Text>
                     </TouchableOpacity>
 
@@ -586,7 +586,7 @@ export default function OverviewScreen({
                   </>
                 ) : (
                   <>
-                    {/* New List Creation Mode */}
+                    {/* New Collection Creation Mode */}
                     <TouchableOpacity
                       style={styles.backButton}
                       onPress={handleBackToEntry}
@@ -594,16 +594,16 @@ export default function OverviewScreen({
                       <Text style={styles.backButtonText}>← Back</Text>
                     </TouchableOpacity>
 
-                    <Text style={styles.modalTitle}>New List</Text>
+                    <Text style={styles.modalTitle}>New Collection</Text>
 
                     <TextInput
                       style={styles.input}
-                      placeholder="List name"
-                      value={newListName}
-                      onChangeText={setNewListName}
+                      placeholder="Collection name"
+                      value={newCollectionName}
+                      onChangeText={setNewCollectionName}
                       autoFocus
                       returnKeyType="done"
-                      onSubmitEditing={handleCreateNewList}
+                      onSubmitEditing={handleCreateNewCollection}
                     />
 
                     <View style={styles.modalButtons}>
@@ -618,10 +618,10 @@ export default function OverviewScreen({
                         style={[
                           styles.button,
                           styles.buttonCreate,
-                          !newListName.trim() && styles.buttonDisabled,
+                          !newCollectionName.trim() && styles.buttonDisabled,
                         ]}
-                        onPress={handleCreateNewList}
-                        disabled={!newListName.trim()}
+                        onPress={handleCreateNewCollection}
+                        disabled={!newCollectionName.trim()}
                       >
                         <Text style={styles.buttonCreateText}>Create</Text>
                       </TouchableOpacity>
@@ -637,47 +637,47 @@ export default function OverviewScreen({
       
       {/* List Picker Modal */}
       <Modal
-        visible={listPickerVisible}
+        visible={collectionPickerVisible}
         animationType="fade"
         transparent
-        onRequestClose={() => setListPickerVisible(false)}
+        onRequestClose={() => setCollectionPickerVisible(false)}
       >
         <TouchableOpacity
           style={styles.modalOverlay}
           activeOpacity={1}
-          onPress={() => setListPickerVisible(false)}
+          onPress={() => setCollectionPickerVisible(false)}
         >
           <TouchableOpacity
             activeOpacity={1}
             onPress={e => e.stopPropagation()}
           >
             <View style={styles.listPickerContent}>
-              <Text style={styles.listPickerTitle}>Select List</Text>
+              <Text style={styles.listPickerTitle}>Select Collection</Text>
               
-              {/* New List option */}
+              {/* New Collection option */}
               <TouchableOpacity
                 style={styles.listPickerItem}
                 onPress={() => {
-                  setListPickerVisible(false);
-                  handleSwitchToNewList();
+                  setCollectionPickerVisible(false);
+                  handleSwitchToNewCollection();
                 }}
               >
-                <Text style={styles.listPickerItemText}>➕ New List</Text>
+                <Text style={styles.listPickerItemText}>➕ New Collection</Text>
               </TouchableOpacity>
               
-              {/* Existing lists */}
+              {/* Existing collections */}
               <ScrollView style={styles.listPickerScroll}>
-                {allLists.map(list => (
+                {allCollections.map(collection => (
                   <TouchableOpacity
-                    key={list.id}
+                    key={collection.id}
                     style={styles.listPickerItem}
                     onPress={() => {
-                      setSelectedList(list);
-                      setListPickerVisible(false);
+                      setSelectedCollection(collection);
+                      setCollectionPickerVisible(false);
                     }}
                   >
                     <Text style={styles.listPickerItemText}>
-                      {list.icon || '📋'} {list.name}
+                      {collection.icon || '📋'} {collection.name}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -685,7 +685,7 @@ export default function OverviewScreen({
               
               <TouchableOpacity
                 style={styles.listPickerCancelButton}
-                onPress={() => setListPickerVisible(false)}
+                onPress={() => setCollectionPickerVisible(false)}
               >
                 <Text style={styles.listPickerCancelText}>Cancel</Text>
               </TouchableOpacity>

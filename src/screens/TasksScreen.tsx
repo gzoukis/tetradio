@@ -12,24 +12,24 @@ import {
   Platform,
   ActionSheetIOS,
 } from 'react-native';
-import { getAllActiveTasks, updateTask, deleteTask, getListByName, getActiveEntriesCountByListId, archiveList, unarchiveList } from '../db/operations';
-import type { TaskWithListName } from '../db/operations';
+import { getAllActiveTasks, updateTask, deleteTask, getCollectionByName, getActiveEntriesCountByCollectionId, archiveCollection, unarchiveCollection } from '../db/operations';
+import type { TaskWithCollectionName } from '../db/operations';
 import { groupTasksByTime } from '../utils/timeClassification';
 import { getPriorityStyle } from '../utils/formatting';
 
 interface TaskSection {
   title: string;
-  data: TaskWithListName[];
+  data: TaskWithCollectionName[];
   collapsed?: boolean;
 }
 
-export default function TasksScreen({ goToLists }: { goToLists: () => void }) {
+export default function TasksScreen({ goToCollections }: { goToCollections: () => void }) {
   const [sections, setSections] = useState<TaskSection[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [completedCollapsed, setCompletedCollapsed] = useState(true);
   const [priorityMenuVisible, setPriorityMenuVisible] = useState(false);
-  const [selectedTaskForPriority, setSelectedTaskForPriority] = useState<TaskWithListName | null>(null);
+  const [selectedTaskForPriority, setSelectedTaskForPriority] = useState<TaskWithCollectionName | null>(null);
 
   useEffect(() => {
     loadTasks();
@@ -84,7 +84,7 @@ export default function TasksScreen({ goToLists }: { goToLists: () => void }) {
     setRefreshing(false);
   };
 
-  const handleToggleTask = async (task: TaskWithListName) => {
+  const handleToggleTask = async (task: TaskWithCollectionName) => {
     const wasCompleted = task.completed;
     const isUnsorted = task.list_name === 'Unsorted';
     
@@ -100,22 +100,22 @@ export default function TasksScreen({ goToLists }: { goToLists: () => void }) {
       if (!wasCompleted) {
         // Just completed an Unsorted task
         // Check if any active (not completed) items remain in Unsorted
-        const unsorted = await getListByName('Unsorted');
+        const unsorted = await getCollectionByName('Unsorted');
         if (unsorted) {
-          const activeCount = await getActiveEntriesCountByListId(unsorted.id);
+          const activeCount = await getActiveEntriesCountByCollectionId(unsorted.id);
           if (activeCount === 0) {
-            // No active items left - archive Unsorted list
+            // No active items left - archive Unsorted collection
             console.log('ðŸ“¦ Last Unsorted item completed, archiving list');
-            await archiveList(unsorted.id);
+            await archiveCollection(unsorted.id);
           }
         }
       } else {
         // Just un-completed an Unsorted task
-        // Ensure Unsorted list is visible
-        const unsorted = await getListByName('Unsorted');
+        // Ensure Unsorted collection is visible
+        const unsorted = await getCollectionByName('Unsorted');
         if (unsorted && unsorted.is_archived) {
           console.log('ðŸ“¥ Un-completing Unsorted task, bringing back list');
-          await unarchiveList(unsorted.id);
+          await unarchiveCollection(unsorted.id);
         }
       }
     }
@@ -123,7 +123,7 @@ export default function TasksScreen({ goToLists }: { goToLists: () => void }) {
     await loadTasks();
   };
 
-  const handleTaskLongPress = (task: TaskWithListName) => {
+  const handleTaskLongPress = (task: TaskWithCollectionName) => {
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
         {
@@ -196,7 +196,7 @@ export default function TasksScreen({ goToLists }: { goToLists: () => void }) {
     }
   };
 
-  const handleSetPriority = async (task: TaskWithListName, priority: number) => {
+  const handleSetPriority = async (task: TaskWithCollectionName, priority: number) => {
     try {
       await updateTask({
         id: task.id,
@@ -209,7 +209,7 @@ export default function TasksScreen({ goToLists }: { goToLists: () => void }) {
     }
   };
 
-  const handleDeleteTask = (task: TaskWithListName) => {
+  const handleDeleteTask = (task: TaskWithCollectionName) => {
     Alert.alert('Delete Task', `Delete "${task.title}"?`, [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -227,7 +227,7 @@ export default function TasksScreen({ goToLists }: { goToLists: () => void }) {
     setCompletedCollapsed(prev => !prev);
   };
 
-  const renderTask = ({ item }: { item: TaskWithListName }) => {
+  const renderTask = ({ item }: { item: TaskWithCollectionName }) => {
     const priorityStyle = !item.completed ? getPriorityStyle(item.calm_priority) : {};
 
     const handleDateChange = async (timestamp: number | null) => {
@@ -327,11 +327,11 @@ export default function TasksScreen({ goToLists }: { goToLists: () => void }) {
       <View style={styles.emptyContainer}>
         <Text style={styles.emptyTitle}>Nothing here yet</Text>
         <Text style={styles.emptyText}>
-          Create a list and add items to get started.
+          Create a collection and add items to get started.
         </Text>
 
-        <TouchableOpacity onPress={goToLists} style={styles.goToListsButton}>
-          <Text style={styles.goToListsText}>Go to Lists</Text>
+        <TouchableOpacity onPress={goToCollections} style={styles.goToListsButton}>
+          <Text style={styles.goToListsText}>Go to Collections</Text>
         </TouchableOpacity>
       </View>
     );

@@ -3,11 +3,9 @@ import {
   View,
   Text,
   StyleSheet,
-  Modal,
   TouchableOpacity,
-  ScrollView,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import ModalShell from './ModalShell';
 
 export interface ActionMenuItem {
   label: string;
@@ -29,119 +27,64 @@ export default function ActionMenu({
   title,
   items,
 }: ActionMenuProps) {
-  const insets = useSafeAreaInsets();
-
   return (
-    <Modal
+    <ModalShell
       visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-    >
-      <TouchableOpacity
-        style={styles.overlay}
-        activeOpacity={1}
-        onPress={onClose}
-      >
-        <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
-          <View style={styles.menu}>
-            {/* Header */}
-            {title && (
-              <View style={styles.header}>
-                <Text style={styles.title}>{title}</Text>
-              </View>
-            )}
-
-            {/* Scrollable items */}
-            <ScrollView
-              style={styles.scroll}
-              contentContainerStyle={styles.scrollContent}
-              bounces={false}
-              showsVerticalScrollIndicator={false}
-            >
-              {items.map((item, index) => (
-                <TouchableOpacity
-                  key={index}
-                  style={[
-                    styles.item,
-                    index === items.length - 1 && styles.itemLast,
-                  ]}
-                  onPress={() => {
-                    onClose();
-                    setTimeout(item.onPress, 150);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  {item.icon && <Text style={styles.icon}>{item.icon}</Text>}
-                  <Text
-                    style={[
-                      styles.label,
-                      item.destructive && styles.labelDestructive,
-                    ]}
-                  >
-                    {item.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            {/* Cancel */}
-            <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-              <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={onClose}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+      onClose={onClose}
+      header={
+        title ? (
+          <Text style={styles.title}>{title}</Text>
+        ) : undefined
+      }
+      footer={
+        <TouchableOpacity
+          style={styles.cancelButton}
+          onPress={onClose}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.cancelText}>Cancel</Text>
         </TouchableOpacity>
-      </TouchableOpacity>
-    </Modal>
+      }
+    >
+      {/* Items - no wrapper View needed, ModalShell handles scroll */}
+      {items.map((item, index) => (
+        <TouchableOpacity
+          key={index}
+          style={[
+            styles.item,
+            index === items.length - 1 && styles.itemLast,
+          ]}
+          onPress={() => {
+            onClose();
+            setTimeout(item.onPress, 150);
+          }}
+          activeOpacity={0.7}
+        >
+          {item.icon && <Text style={styles.icon}>{item.icon}</Text>}
+          <Text
+            style={[
+              styles.label,
+              item.destructive && styles.labelDestructive,
+            ]}
+          >
+            {item.label}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </ModalShell>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-  },
-
-  menu: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    width: '90%',
-    maxWidth: 400,
-    maxHeight: '80%',
-    overflow: 'hidden',
-  },
-
-  header: {
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
-  },
-
+  // Header content
   title: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '600',
     textAlign: 'center',
     color: '#1a1a1a',
   },
 
-  scroll: {
-    maxHeight: 300,
-  },
-
-  scrollContent: {
-    paddingVertical: 4,
-  },
-
+  // Item styles - 56px minimum height as specified
   item: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -158,11 +101,11 @@ const styles = StyleSheet.create({
 
   icon: {
     fontSize: 20,
-    marginRight: 12,
+    marginRight: 14,
   },
 
   label: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '500',
     color: '#1a1a1a',
   },
@@ -171,19 +114,13 @@ const styles = StyleSheet.create({
     color: '#ef4444',
   },
 
-  footer: {
-    borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
-    backgroundColor: '#f9fafb',
-  },
-
+  // Footer content
   cancelButton: {
-    paddingVertical: 16,
     alignItems: 'center',
   },
 
   cancelText: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '600',
     color: '#6b7280',
   },

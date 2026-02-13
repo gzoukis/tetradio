@@ -3,12 +3,9 @@ import {
   View,
   Text,
   StyleSheet,
-  Modal,
   TouchableOpacity,
-  ScrollView,
-  Platform,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import ModalShell from './ModalShell';
 
 export interface SelectionOption {
   label: string;
@@ -37,132 +34,92 @@ export default function SelectionMenu({
   onSelect,
   selectedValue,
 }: SelectionMenuProps) {
-  const insets = useSafeAreaInsets();
-
   const handleSelect = (value: any) => {
     onClose();
     setTimeout(() => onSelect(value), 150);
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide">
-      <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose}>
-        <TouchableOpacity
-          activeOpacity={1}
-          onPress={(e) => e.stopPropagation()}
-          style={styles.container}
-        >
-          <View style={styles.menu}>
-            {(title || subtitle) && (
-              <View style={styles.header}>
-                {title && <Text style={styles.title}>{title}</Text>}
-                {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
-              </View>
-            )}
-
-            <ScrollView
-              style={styles.scroll}
-              contentContainerStyle={styles.scrollContent}
-              bounces={false}
-              showsVerticalScrollIndicator={false}
-            >
-              {options.map((option, index) => {
-                const selected = option.value === selectedValue;
-
-                return (
-                  <TouchableOpacity
-                    key={index}
-                    style={[
-                      styles.option,
-                      selected && styles.optionSelected,
-                      index === options.length - 1 && styles.optionLast,
-                    ]}
-                    onPress={() => handleSelect(option.value)}
-                    activeOpacity={0.7}
-                  >
-                    {option.color ? (
-                      <View
-                        style={[
-                          styles.colorIndicator,
-                          { backgroundColor: option.color },
-                          selected && styles.colorIndicatorSelected,
-                        ]}
-                      />
-                    ) : option.icon ? (
-                      <Text style={styles.optionIcon}>{option.icon}</Text>
-                    ) : null}
-
-                    <View style={styles.optionContent}>
-                      <Text
-                        style={[
-                          styles.optionLabel,
-                          selected && styles.optionLabelSelected,
-                        ]}
-                      >
-                        {option.label}
-                      </Text>
-                      {option.description && (
-                        <Text style={styles.optionDescription}>
-                          {option.description}
-                        </Text>
-                      )}
-                    </View>
-
-                    {selected && <Text style={styles.checkmark}>✓</Text>}
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-
-            <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-              <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={onClose}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
+    <ModalShell
+      visible={visible}
+      onClose={onClose}
+      animationType="slide"
+      header={
+        title || subtitle ? (
+          <View>
+            {title && <Text style={styles.title}>{title}</Text>}
+            {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
           </View>
+        ) : undefined
+      }
+      footer={
+        <TouchableOpacity
+          style={styles.cancelButton}
+          onPress={onClose}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.cancelText}>Cancel</Text>
         </TouchableOpacity>
-      </TouchableOpacity>
-    </Modal>
+      }
+    >
+      {/* Options - no wrapper View needed, ModalShell handles scroll */}
+      {options.map((option, index) => {
+        const selected = option.value === selectedValue;
+
+        return (
+          <TouchableOpacity
+            key={index}
+            style={[
+              styles.option,
+              selected && styles.optionSelected,
+              index === options.length - 1 && styles.optionLast,
+            ]}
+            onPress={() => handleSelect(option.value)}
+            activeOpacity={0.7}
+          >
+            {option.color ? (
+              <View
+                style={[
+                  styles.colorIndicator,
+                  { backgroundColor: option.color },
+                  selected && styles.colorIndicatorSelected,
+                ]}
+              />
+            ) : option.icon ? (
+              <Text style={styles.optionIcon}>{option.icon}</Text>
+            ) : null}
+
+            <View style={styles.optionContent}>
+              <Text
+                style={[
+                  styles.optionLabel,
+                  selected && styles.optionLabelSelected,
+                ]}
+              >
+                {option.label}
+              </Text>
+              {option.description && (
+                <Text style={styles.optionDescription}>
+                  {option.description}
+                </Text>
+              )}
+            </View>
+
+            {selected && <Text style={styles.checkmark}>✓</Text>}
+          </TouchableOpacity>
+        );
+      })}
+    </ModalShell>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: Platform.OS === 'ios' ? 'center' : 'flex-end',
-    paddingHorizontal: 16,
-  },
-
-  container: {
-    alignItems: 'center',
-    width: '100%',
-  },
-
-  menu: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    width: Platform.OS === 'ios' ? '90%' : '100%',
-    maxWidth: 400,
-    maxHeight: '80%',
-    overflow: 'hidden',
-  },
-
-  header: {
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-
+  // Header content
   title: {
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '600',
     textAlign: 'center',
+    color: '#1a1a1a',
   },
 
   subtitle: {
@@ -172,14 +129,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  scroll: {
-    flex: 1,
-  },
-
-  scrollContent: {
-    paddingVertical: 4,
-  },
-
+  // Option styles - 56px minimum height as specified
   option: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -199,14 +149,14 @@ const styles = StyleSheet.create({
   },
 
   colorIndicator: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    marginRight: 12,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginRight: 16,
   },
 
   colorIndicatorSelected: {
-    borderWidth: 2,
+    borderWidth: 3,
     borderColor: '#3b82f6',
   },
 
@@ -222,6 +172,7 @@ const styles = StyleSheet.create({
   optionLabel: {
     fontSize: 17,
     fontWeight: '500',
+    color: '#1a1a1a',
   },
 
   optionLabelSelected: {
@@ -236,19 +187,13 @@ const styles = StyleSheet.create({
   },
 
   checkmark: {
-    fontSize: 18,
+    fontSize: 20,
     color: '#3b82f6',
     fontWeight: 'bold',
   },
 
-  footer: {
-    borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
-    backgroundColor: '#f9fafb',
-  },
-
+  // Footer content
   cancelButton: {
-    paddingVertical: 16,
     alignItems: 'center',
   },
 

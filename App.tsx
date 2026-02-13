@@ -9,12 +9,12 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 
 import OverviewScreen from './src/screens/OverviewScreen';
 import TasksScreen from './src/screens/TasksScreen';
-import ListsScreen from './src/screens/ListsScreen';
+import CollectionsScreen from './src/screens/CollectionsScreen';
 import ExpensesScreen from './src/screens/ExpensesScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import { initDatabase, getDatabase } from './src/db/database';
 
-type Tab = 'overview' | 'tasks' | 'lists' | 'expenses' | 'settings';
+type Tab = 'overview' | 'tasks' | 'collections' | 'expenses' | 'settings';
 
 // Global flag to prevent multiple initialization runs
 let dbInitialized = false;
@@ -65,7 +65,7 @@ async function initializeApp() {
         deleted_at: number | null; 
         is_archived: number;
       }>(
-        'SELECT id, deleted_at, is_archived FROM lists WHERE is_system = 1 LIMIT 1'
+        'SELECT id, deleted_at, is_archived FROM collections WHERE is_system = 1 LIMIT 1'
       );
       
       if (!unsorted) {
@@ -121,7 +121,7 @@ async function initializeApp() {
 
 function AppContent() {
   const [tab, setTab] = useState<Tab>('overview');
-  const [selectedListId, setSelectedListId] = useState<string | undefined>(undefined);
+  const [selectedCollectionId, setSelectedCollectionId] = useState<string | undefined>(undefined);
   const [appReady, setAppReady] = useState(false);
   const insets = useSafeAreaInsets();
 
@@ -151,12 +151,12 @@ function AppContent() {
     
     switch (tab) {
       case 'tasks':
-        return <TasksScreen goToLists={() => setTab('lists')} />;
-      case 'lists':
+        return <TasksScreen goToCollections={() => setTab('collections')} />;
+      case 'collections':
         return (
-          <ListsScreen 
-            initialListId={selectedListId}
-            onListIdChange={setSelectedListId}
+          <CollectionsScreen 
+            initialCollectionId={selectedCollectionId}
+            onListIdChange={setSelectedCollectionId}
           />
         );
       case 'expenses':
@@ -166,9 +166,9 @@ function AppContent() {
       default:
         return <OverviewScreen 
           onViewTasks={() => setTab('tasks')}
-          goToLists={(listId) => {
-            setSelectedListId(listId);
-            setTab('lists');
+          goToCollections={(listId) => {
+            setSelectedCollectionId(listId);
+            setTab('collections');
           }}
         />;
     }
@@ -187,7 +187,7 @@ function AppContent() {
             { paddingBottom: Math.max(insets.bottom, 8) },
           ]}
         >
-          {(['overview', 'tasks', 'lists', 'expenses', 'settings'] as Tab[]).map(
+          {(['overview', 'tasks', 'collections', 'expenses', 'settings'] as Tab[]).map(
             t => (
               <TouchableOpacity
                 key={t}

@@ -41,8 +41,8 @@ interface ChecklistScreenProps {
  * - Pull-to-refresh
  * 
  * Navigation:
- * - Opened via navigation push from ListsScreen
- * - Back arrow returns to list
+ * - Opened via navigation push from CollectionsScreen
+ * - Back arrow returns to collection
  * 
  * Completion:
  * - All items checked = checklist complete (derived, not stored)

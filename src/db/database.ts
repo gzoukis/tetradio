@@ -1,5 +1,5 @@
 import * as SQLite from 'expo-sqlite';
-import { INIT_SCHEMA, SCHEMA_VERSION, MIGRATE_V1_TO_V2, MIGRATE_V2_TO_V3, MIGRATE_V3_TO_V4 } from './schema';
+import { INIT_SCHEMA, SCHEMA_VERSION, MIGRATE_V1_TO_V2, MIGRATE_V2_TO_V3, MIGRATE_V3_TO_V4, MIGRATE_V4_TO_V5 } from './schema';
 
 let dbInstance: SQLite.SQLiteDatabase | null = null;
 
@@ -8,7 +8,7 @@ let dbInstance: SQLite.SQLiteDatabase | null = null;
  * 
  * METADATA KEY: 'schema_version'
  * STORAGE TYPE: TEXT (string)
- * FORMAT: Integer as string (e.g., '1', '2', '3', '4')
+ * FORMAT: Integer as string (e.g., '1', '2', '3', '4', '5')
  */
 async function getCurrentVersion(db: SQLite.SQLiteDatabase): Promise<number> {
   try {
@@ -187,6 +187,92 @@ async function migrateV3ToV4(db: SQLite.SQLiteDatabase): Promise<void> {
 }
 
 /**
+ * Run migration from version 4 to version 5
+ * Rename Lists → Collections
+ * 
+ * TICKET: 14 - Lists → Collections Rename
+ * 
+ * CHANGES:
+ * - Renames lists → collections
+ * - Renames list_items → collection_items
+ * - Renames list_id → collection_id in entries
+ * - Renames list_id → collection_id in collection_items
+ * - Recreates all indexes with new names
+ * 
+ * SAFETY GUARANTEES:
+ * - Runs in transaction (automatic rollback on error)
+ * - Verifies tables were renamed
+ * - Verifies column was renamed
+ * - Idempotent (safe to run multiple times)
+ */
+async function migrateV4ToV5(db: SQLite.SQLiteDatabase): Promise<void> {
+  console.log('Running migration: V4 → V5 (Lists → Collections)');
+  
+  try {
+    await db.execAsync('BEGIN TRANSACTION;');
+    
+    // Check if we need to migrate (lists table exists)
+    const listsExists = await db.getFirstAsync<{ count: number }>(
+      "SELECT COUNT(*) as count FROM sqlite_master WHERE type='table' AND name='lists'"
+    );
+    
+    if (!listsExists || listsExists.count === 0) {
+      // Already migrated or fresh install
+      console.log('Lists table not found (already migrated or fresh install), skipping migration');
+      await db.execAsync('COMMIT;');
+      return;
+    }
+    
+    // Run migration SQL
+    await db.execAsync(MIGRATE_V4_TO_V5);
+    
+    // Verify collections table was created
+    const collectionsCheck = await db.getFirstAsync<{ count: number }>(
+      "SELECT COUNT(*) as count FROM sqlite_master WHERE type='table' AND name='collections'"
+    );
+    
+    if (!collectionsCheck || collectionsCheck.count === 0) {
+      throw new Error('Migration verification failed: collections table not created');
+    }
+    
+    // Verify collection_items table was created
+    const collectionItemsCheck = await db.getFirstAsync<{ count: number }>(
+      "SELECT COUNT(*) as count FROM sqlite_master WHERE type='table' AND name='collection_items'"
+    );
+    
+    if (!collectionItemsCheck || collectionItemsCheck.count === 0) {
+      throw new Error('Migration verification failed: collection_items table not created');
+    }
+    
+    // Verify collection_id column exists in entries
+    const entriesColumnCheck = await db.getFirstAsync<{ count: number }>(
+      "SELECT COUNT(*) as count FROM pragma_table_info('entries') WHERE name='collection_id'"
+    );
+    
+    if (!entriesColumnCheck || entriesColumnCheck.count === 0) {
+      throw new Error('Migration verification failed: collection_id column not found in entries');
+    }
+    
+    // Verify old tables are gone
+    const oldListsCheck = await db.getFirstAsync<{ count: number }>(
+      "SELECT COUNT(*) as count FROM sqlite_master WHERE type='table' AND name='lists'"
+    );
+    
+    if (oldListsCheck && oldListsCheck.count > 0) {
+      throw new Error('Migration verification failed: old lists table still exists');
+    }
+    
+    console.log('Migration V4→V5 successful: Lists → Collections rename complete');
+    
+    await db.execAsync('COMMIT;');
+  } catch (error) {
+    await db.execAsync('ROLLBACK;');
+    console.error('Migration V4→V5 failed:', error);
+    throw error;
+  }
+}
+
+/**
  * Initialize SQLite database with schema
  * Creates all tables and indexes, runs migrations if needed
  */
@@ -239,6 +325,10 @@ export async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
       
       if (currentVersion < 4) {
         await migrateV3ToV4(db);
+      }
+      
+      if (currentVersion < 5) {
+        await migrateV4ToV5(db);
       }
       
       await updateVersion(db, SCHEMA_VERSION);
@@ -296,12 +386,14 @@ export async function resetDatabase(): Promise<void> {
   await db.execAsync('BEGIN TRANSACTION;');
   
   try {
-    // Drop all tables
+    // Drop all tables (both old and new names for compatibility)
     await db.execAsync('DROP TABLE IF EXISTS entries;');
     await db.execAsync('DROP TABLE IF EXISTS checklist_items;');
     await db.execAsync('DROP TABLE IF EXISTS tasks;'); // In case old table exists
-    await db.execAsync('DROP TABLE IF EXISTS lists;');
-    await db.execAsync('DROP TABLE IF EXISTS list_items;');
+    await db.execAsync('DROP TABLE IF EXISTS collections;');
+    await db.execAsync('DROP TABLE IF EXISTS lists;'); // In case old table exists
+    await db.execAsync('DROP TABLE IF EXISTS collection_items;');
+    await db.execAsync('DROP TABLE IF EXISTS list_items;'); // In case old table exists
     await db.execAsync('DROP TABLE IF EXISTS reminders;');
     await db.execAsync('DROP TABLE IF EXISTS budget_categories;');
     await db.execAsync('DROP TABLE IF EXISTS expenses;');

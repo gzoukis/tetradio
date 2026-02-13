@@ -1,13 +1,13 @@
 import * as Crypto from 'expo-crypto';
 import { getDatabase } from './database';
 import type { 
-  Task, List, Note, Checklist, ChecklistItem, ChecklistWithStats,
+  Task, Collection, Note, Checklist, ChecklistItem, ChecklistWithStats,
   CreateNote, UpdateNote, CreateChecklist, UpdateChecklist, CreateChecklistItem, UpdateChecklistItem 
 } from '../types/models';
 import { normalizeNameCanonical, normalizeNameDisplay } from '../utils/validation';
 
-export interface TaskWithListName extends Task {
-  list_name?: string;
+export interface TaskWithCollectionName extends Task {
+  collection_name?: string;
 }
 
 /**
@@ -16,13 +16,13 @@ export interface TaskWithListName extends Task {
  * 
  * VERSION 2: Updated to query entries table with type filter
  */
-export async function getTasksByListId(listId: string): Promise<Task[]> {
+export async function getTasksByCollectionId(collectionId: string): Promise<Task[]> {
   const db = await getDatabase();
   const rows = await db.getAllAsync<any>(
     `SELECT * FROM entries 
-     WHERE list_id = ? AND type = 'task' AND deleted_at IS NULL 
+     WHERE collection_id = ? AND type = 'task' AND deleted_at IS NULL 
      ORDER BY completed ASC, calm_priority ASC, created_at DESC`,
-    [listId]
+    [collectionId]
   );
   
   return rows.map(row => ({
@@ -34,7 +34,7 @@ export async function getTasksByListId(listId: string): Promise<Task[]> {
     completed: row.completed === 1,
     completed_at: row.completed_at,
     calm_priority: row.calm_priority,
-    list_id: row.list_id,
+    collection_id: row.collection_id,
     parent_task_id: row.parent_task_id,
     snoozed_until: row.snoozed_until,
     created_at: row.created_at,
@@ -44,15 +44,15 @@ export async function getTasksByListId(listId: string): Promise<Task[]> {
 }
 
 /**
- * Get all lists
+ * Get all collections
  */
-export async function getAllLists(): Promise<List[]> {
+export async function getAllCollections(): Promise<Collection[]> {
   const db = await getDatabase();
   const rows = await db.getAllAsync<any>(
-    'SELECT * FROM lists WHERE deleted_at IS NULL ORDER BY sort_order ASC'
+    'SELECT * FROM collections WHERE deleted_at IS NULL ORDER BY sort_order ASC'
   );
 
-  console.log(`📋 getAllLists returned ${rows.length} rows from database`);
+  console.log(`📋 getAllCollections returned ${rows.length} rows from database`);
   rows.forEach(row => {
     console.log(`  - ${row.icon || '?'} ${row.name} [is_system=${row.is_system}, deleted_at=${row.deleted_at}]`);
   });
@@ -73,27 +73,27 @@ export async function getAllLists(): Promise<List[]> {
 }
 
 /**
- * Check if a list name already exists (case-insensitive)
+ * Check if a collection name already exists (case-insensitive)
  * 
  * TICKET 12: Duplicate name validation
  * TICKET 12 FOLLOW-UP (1️⃣): Uses canonical normalization
  * TICKET 12 FOLLOW-UP (4️⃣): Rename-safe with excludeId
  * 
  * @param name - List name to check
- * @param excludeId - Optional: List ID to exclude from check (for rename)
+ * @param excludeId - Optional: Collection ID to exclude from check (for rename)
  * @returns true if duplicate exists, false otherwise
  */
-export async function listNameExists(name: string, excludeId?: string): Promise<boolean> {
+export async function collectionNameExists(name: string, excludeId?: string): Promise<boolean> {
   const db = await getDatabase();
   const normalized = normalizeNameCanonical(name);
   
-  // Get all active list names
+  // Get all active collection names
   const rows = await db.getAllAsync<{ id: string; name: string }>(
-    'SELECT id, name FROM lists WHERE deleted_at IS NULL'
+    'SELECT id, name FROM collections WHERE deleted_at IS NULL'
   );
   
   return rows.some(row => {
-    // Skip the list being renamed
+    // Skip the collection being renamed
     if (excludeId && row.id === excludeId) {
       return false;
     }
@@ -103,20 +103,20 @@ export async function listNameExists(name: string, excludeId?: string): Promise<
 }
 
 /**
- * Create a new list
+ * Create a new collection
  * 
  * TICKET 12: Added duplicate name validation
  * TICKET 12 FOLLOW-UP (1️⃣): Uses display normalization for storage
  * 
- * @throws Error if list name already exists
+ * @throws Error if collection name already exists
  */
-export async function createList(input: {
+export async function createCollection(input: {
   name: string;
   sort_order: number;
   is_pinned: boolean;
   is_archived: boolean;
   is_system?: boolean;
-}): Promise<List> {
+}): Promise<Collection> {
   const db = await getDatabase();
   
   // Normalize for display/storage (preserves case, collapses whitespace)
@@ -127,16 +127,16 @@ export async function createList(input: {
   }
   
   // Check for duplicates (uses canonical normalization internally)
-  const exists = await listNameExists(displayName);
+  const exists = await collectionNameExists(displayName);
   if (exists) {
-    throw new Error('A list with this name already exists');
+    throw new Error('A collection with this name already exists');
   }
   
   const now = Date.now();
   const id = Crypto.randomUUID();
 
   await db.runAsync(
-    `INSERT INTO lists (
+    `INSERT INTO collections (
       id, name, sort_order, is_pinned, is_archived, is_system,
       created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -167,18 +167,18 @@ export async function createList(input: {
 }
 
 /**
- * Rename a list
+ * Rename a collection
  * 
  * TICKET 13: Rename List UI
  * 
- * Uses same validation as createList (shared contract from Ticket 12).
- * Excludes the list being renamed from duplicate detection.
+ * Uses same validation as createCollection (shared contract from Ticket 12).
+ * Excludes the collection being renamed from duplicate detection.
  * 
- * @param listId - ID of list to rename
- * @param newName - New name for the list
+ * @param collectionId - ID of list to rename
+ * @param newName - New name for the collection
  * @throws Error if new name is invalid or already exists
  */
-export async function renameList(listId: string, newName: string): Promise<void> {
+export async function renameCollection(collectionId: string, newName: string): Promise<void> {
   const db = await getDatabase();
   
   // Normalize for display/storage (preserves case, collapses whitespace)
@@ -188,17 +188,17 @@ export async function renameList(listId: string, newName: string): Promise<void>
     throw new Error('List name cannot be empty');
   }
   
-  // Check for duplicates (exclude self using listId)
-  const exists = await listNameExists(displayName, listId);
+  // Check for duplicates (exclude self using collectionId)
+  const exists = await collectionNameExists(displayName, collectionId);
   if (exists) {
-    throw new Error('A list with this name already exists');
+    throw new Error('A collection with this name already exists');
   }
   
   const now = Date.now();
   
   await db.runAsync(
-    'UPDATE lists SET name = ?, updated_at = ? WHERE id = ? AND is_system = 0',
-    [displayName, now, listId]
+    'UPDATE collections SET name = ?, updated_at = ? WHERE id = ? AND is_system = 0',
+    [displayName, now, collectionId]
   );
 }
 
@@ -207,27 +207,27 @@ export async function renameList(listId: string, newName: string): Promise<void>
  * 
  * VERSION 2: Updated to reference entries table
  */
-export async function deleteList(listId: string): Promise<void> {
+export async function deleteCollection(collectionId: string): Promise<void> {
   const db = await getDatabase();
 
   // Use transaction to ensure atomicity
   await db.execAsync('BEGIN TRANSACTION;');
   
   try {
-    // Soft-delete the list
+    // Soft-delete the collection
     await db.runAsync(
-      `UPDATE lists
+      `UPDATE collections
        SET is_archived = 1, updated_at = datetime('now')
        WHERE id = ?`,
-      [listId]
+      [collectionId]
     );
 
     // Soft-delete all entries in this list (tasks, notes, checklists)
     await db.runAsync(
       `UPDATE entries
        SET deleted_at = datetime('now'), updated_at = datetime('now')
-       WHERE list_id = ? AND deleted_at IS NULL`,
-      [listId]
+       WHERE collection_id = ? AND deleted_at IS NULL`,
+      [collectionId]
     );
 
     await db.execAsync('COMMIT;');
@@ -246,7 +246,7 @@ export async function deleteList(listId: string): Promise<void> {
  */
 export async function createTask(input: {
   title: string;
-  list_id: string;
+  collection_id: string;
   due_date?: number;
   calm_priority?: number;
 }): Promise<void> {
@@ -257,7 +257,7 @@ export async function createTask(input: {
       id,
       type,
       title,
-      list_id,
+      collection_id,
       due_date,
       calm_priority,
       completed,
@@ -267,7 +267,7 @@ export async function createTask(input: {
     [
       Crypto.randomUUID(),
       input.title,
-      input.list_id,
+      input.collection_id,
       input.due_date ?? null,
       input.calm_priority ?? 2,
     ]
@@ -347,23 +347,23 @@ export async function deleteTask(taskId: string): Promise<void> {
     [taskId]
   );
   
-  await cleanupUnsortedListIfEmpty();
+  await cleanupUnsortedCollectionIfEmpty();
 }
 
 /**
  * Get all active tasks across all lists
- * Includes list name via JOIN
+ * Includes collection name via JOIN
  * 
  * VERSION 2: Updated to query entries table with type filter
  */
-export async function getAllActiveTasks(): Promise<TaskWithListName[]> {
+export async function getAllActiveTasks(): Promise<TaskWithCollectionName[]> {
   const db = await getDatabase();
   const rows = await db.getAllAsync<any>(
     `SELECT 
       t.*,
       l.name as list_name
      FROM entries t
-     LEFT JOIN lists l ON t.list_id = l.id
+     LEFT JOIN collections l ON t.collection_id = l.id
      WHERE t.type = 'task' AND t.deleted_at IS NULL
      ORDER BY t.completed ASC, t.created_at DESC`
   );
@@ -377,7 +377,7 @@ export async function getAllActiveTasks(): Promise<TaskWithListName[]> {
     completed: row.completed === 1,
     completed_at: row.completed_at,
     calm_priority: row.calm_priority,
-    list_id: row.list_id,
+    collection_id: row.collection_id,
     parent_task_id: row.parent_task_id,
     snoozed_until: row.snoozed_until,
     created_at: row.created_at,
@@ -403,7 +403,7 @@ export async function createNote(input: CreateNote): Promise<void> {
       type,
       title,
       notes,
-      list_id,
+      collection_id,
       created_at,
       updated_at
     ) VALUES (?, 'note', ?, ?, ?, datetime('now'), datetime('now'))`,
@@ -411,7 +411,7 @@ export async function createNote(input: CreateNote): Promise<void> {
       Crypto.randomUUID(),
       input.title,
       input.notes ?? null,
-      input.list_id ?? null,
+      input.collection_id ?? null,
     ]
   );
 }
@@ -462,19 +462,19 @@ export async function deleteNote(noteId: string): Promise<void> {
     [noteId]
   );
   
-  await cleanupUnsortedListIfEmpty();
+  await cleanupUnsortedCollectionIfEmpty();
 }
 
 /**
  * Get all notes for a specific list
  */
-export async function getNotesByListId(listId: string): Promise<Note[]> {
+export async function getNotesByCollectionId(collectionId: string): Promise<Note[]> {
   const db = await getDatabase();
   const rows = await db.getAllAsync<any>(
     `SELECT * FROM entries 
-     WHERE list_id = ? AND type = 'note' AND deleted_at IS NULL 
+     WHERE collection_id = ? AND type = 'note' AND deleted_at IS NULL 
      ORDER BY created_at DESC`,
-    [listId]
+    [collectionId]
   );
   
   return rows.map(row => ({
@@ -482,7 +482,7 @@ export async function getNotesByListId(listId: string): Promise<Note[]> {
     type: 'note' as const,
     title: row.title,
     notes: row.notes,
-    list_id: row.list_id,
+    collection_id: row.collection_id,
     created_at: row.created_at,
     updated_at: row.updated_at,
     deleted_at: row.deleted_at,
@@ -500,13 +500,13 @@ export async function getNotesByListId(listId: string): Promise<Note[]> {
  * This is the PRIMARY creation method for checklists.
  * 
  * @param input.title - Checklist title
- * @param input.list_id - Parent list ID
+ * @param input.collection_id - Parent list ID
  * @param input.items - Array of item titles (strings)
  * @returns The created checklist ID
  */
 export async function createChecklistWithItems(input: {
   title: string;
-  list_id?: string;
+  collection_id?: string;
   items: string[];
 }): Promise<string> {
   const db = await getDatabase();
@@ -521,11 +521,11 @@ export async function createChecklistWithItems(input: {
         id,
         type,
         title,
-        list_id,
+        collection_id,
         created_at,
         updated_at
       ) VALUES (?, 'checklist', ?, ?, datetime('now'), datetime('now'))`,
-      [checklistId, input.title, input.list_id ?? null]
+      [checklistId, input.title, input.collection_id ?? null]
     );
 
     // 2. Create all checklist items
@@ -554,11 +554,11 @@ export async function createChecklistWithItems(input: {
 }
 
 /**
- * Create a simple checklist without items (for ListsScreen modal)
+ * Create a simple checklist without items (for CollectionsScreen modal)
  */
 export async function createChecklist(input: {
   title: string;
-  list_id?: string;
+  collection_id?: string;
 }): Promise<string> {
   const db = await getDatabase();
   const checklistId = Crypto.randomUUID();
@@ -569,11 +569,11 @@ export async function createChecklist(input: {
         id,
         type,
         title,
-        list_id,
+        collection_id,
         created_at,
         updated_at
       ) VALUES (?, 'checklist', ?, ?, datetime('now'), datetime('now'))`,
-      [checklistId, input.title, input.list_id ?? null]
+      [checklistId, input.title, input.collection_id ?? null]
     );
 
     return checklistId;
@@ -645,16 +645,16 @@ export async function deleteChecklist(checklistId: string): Promise<void> {
   }
   
   // Cleanup AFTER transaction is complete
-  await cleanupUnsortedListIfEmpty();
+  await cleanupUnsortedCollectionIfEmpty();
 }
 
 /**
  * Get all checklists for a specific list WITH completion statistics
  * 
  * Returns ChecklistWithStats[] including checked_count and total_count
- * Used for displaying progress in ListsScreen
+ * Used for displaying progress in CollectionsScreen
  */
-export async function getChecklistsByListId(listId: string): Promise<ChecklistWithStats[]> {
+export async function getChecklistsByCollectionId(collectionId: string): Promise<ChecklistWithStats[]> {
   const db = await getDatabase();
   
   const rows = await db.getAllAsync<any>(
@@ -664,17 +664,17 @@ export async function getChecklistsByListId(listId: string): Promise<ChecklistWi
       SUM(CASE WHEN ci.checked = 1 THEN 1 ELSE 0 END) as checked_count
      FROM entries e
      LEFT JOIN checklist_items ci ON e.id = ci.checklist_id AND ci.deleted_at IS NULL
-     WHERE e.list_id = ? AND e.type = 'checklist' AND e.deleted_at IS NULL
+     WHERE e.collection_id = ? AND e.type = 'checklist' AND e.deleted_at IS NULL
      GROUP BY e.id
      ORDER BY e.created_at DESC`,
-    [listId]
+    [collectionId]
   );
   
   return rows.map(row => ({
     id: row.id,
     type: 'checklist' as const,
     title: row.title,
-    list_id: row.list_id,
+    collection_id: row.collection_id,
     created_at: row.created_at,
     updated_at: row.updated_at,
     deleted_at: row.deleted_at,
@@ -701,7 +701,7 @@ export async function getChecklist(checklistId: string): Promise<Checklist | nul
     id: row.id,
     type: 'checklist' as const,
     title: row.title,
-    list_id: row.list_id,
+    collection_id: row.collection_id,
     created_at: row.created_at,
     updated_at: row.updated_at,
     deleted_at: row.deleted_at,
@@ -815,19 +815,19 @@ export async function deleteChecklistItem(itemId: string): Promise<void> {
   );
 }
 /**
- * Get or create the Unsorted system list
+ * Get or create the Unsorted system collection
  * 
  * TICKET 9B: Quick Create from Overview
  * 
- * Auto-creates a system list for entries without an assigned list.
+ * Auto-creates a system collection for entries without an assigned collection.
  * Properties: name='Unsorted', icon='📥', is_system=true, sort_order=9999
  */
-export async function getOrCreateUnsortedList(): Promise<List> {
+export async function getOrCreateUnsortedCollection(): Promise<Collection> {
   const db = await getDatabase();
   
-  // Try to find existing Unsorted list (even if archived)
+  // Try to find existing Unsorted collection (even if archived)
   const existing = await db.getFirstAsync<any>(
-    `SELECT * FROM lists 
+    `SELECT * FROM collections 
      WHERE is_system = 1 AND deleted_at IS NULL
      LIMIT 1`
   );
@@ -835,10 +835,10 @@ export async function getOrCreateUnsortedList(): Promise<List> {
   if (existing) {
     // If it's archived, un-archive it (user is adding an entry)
     if (existing.is_archived === 1) {
-      console.log('📥 Un-archiving Unsorted list (new entry being added)');
+      console.log('📥 Un-archiving Unsorted collection (new entry being added)');
       const now = Date.now();
       await db.runAsync(
-        'UPDATE lists SET is_archived = 0, updated_at = ? WHERE id = ?',
+        'UPDATE collections SET is_archived = 0, updated_at = ? WHERE id = ?',
         [now, existing.id]
       );
       
@@ -872,13 +872,13 @@ export async function getOrCreateUnsortedList(): Promise<List> {
     };
   }
   
-  // Create Unsorted list
+  // Create Unsorted collection
   const id = Crypto.randomUUID();
   const now = Date.now();
   
-  console.log('📥 Creating new Unsorted list');
+  console.log('📥 Creating new Unsorted collection');
   await db.runAsync(
-    `INSERT INTO lists (
+    `INSERT INTO collections (
       id, name, icon, color_hint, sort_order, is_pinned, is_archived, is_system, 
       created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -914,12 +914,12 @@ export async function getOrCreateUnsortedList(): Promise<List> {
  * Get list by name
  * 
  * TICKET 9C: Completion/Un-completion logic helper
- * Used to find the Unsorted list for special handling
+ * Used to find the Unsorted collection for special handling
  */
-export async function getListByName(name: string): Promise<List | null> {
+export async function getCollectionByName(name: string): Promise<List | null> {
   const db = await getDatabase();
   const row = await db.getFirstAsync<any>(
-    'SELECT * FROM lists WHERE name = ? AND deleted_at IS NULL LIMIT 1',
+    'SELECT * FROM collections WHERE name = ? AND deleted_at IS NULL LIMIT 1',
     [name]
   );
   
@@ -950,17 +950,17 @@ export async function getListByName(name: string): Promise<List | null> {
  * - Not deleted (deleted_at IS NULL)
  * - Not completed (completed = 0 or NULL for non-completable types)
  * 
- * Used to determine if Unsorted list should be archived after task completion
+ * Used to determine if Unsorted collection should be archived after task completion
  */
-export async function getActiveEntriesCountByListId(listId: string): Promise<number> {
+export async function getActiveEntriesCountByCollectionId(collectionId: string): Promise<number> {
   const db = await getDatabase();
   const result = await db.getFirstAsync<{ count: number }>(
     `SELECT COUNT(*) as count 
      FROM entries 
-     WHERE list_id = ? 
+     WHERE collection_id = ? 
        AND deleted_at IS NULL 
        AND (completed = 0 OR completed IS NULL)`,
-    [listId]
+    [collectionId]
   );
   
   return result?.count ?? 0;
@@ -970,16 +970,16 @@ export async function getActiveEntriesCountByListId(listId: string): Promise<num
  * Un-archive a list
  * 
  * TICKET 9C: Un-completion logic helper
- * Used when un-completing an Unsorted task to bring back the Unsorted list
+ * Used when un-completing an Unsorted task to bring back the Unsorted collection
  */
-export async function unarchiveList(listId: string): Promise<void> {
+export async function unarchiveCollection(collectionId: string): Promise<void> {
   const db = await getDatabase();
   const now = Date.now();
   
-  console.log('📥 Un-archiving list:', listId);
+  console.log('📥 Un-archiving collection:', collectionId);
   await db.runAsync(
-    'UPDATE lists SET is_archived = 0, updated_at = ? WHERE id = ?',
-    [now, listId]
+    'UPDATE collections SET is_archived = 0, updated_at = ? WHERE id = ?',
+    [now, collectionId]
   );
 }
 
@@ -987,58 +987,58 @@ export async function unarchiveList(listId: string): Promise<void> {
  * Archive a list
  * 
  * TICKET 9C: Completion logic helper
- * Used when completing the last Unsorted task to hide the Unsorted list
+ * Used when completing the last Unsorted task to hide the Unsorted collection
  */
-export async function archiveList(listId: string): Promise<void> {
+export async function archiveCollection(collectionId: string): Promise<void> {
   const db = await getDatabase();
   const now = Date.now();
   
-  console.log('📦 Archiving list:', listId);
+  console.log('📦 Archiving collection:', collectionId);
   await db.runAsync(
-    'UPDATE lists SET is_archived = 1, updated_at = ? WHERE id = ?',
-    [now, listId]
+    'UPDATE collections SET is_archived = 1, updated_at = ? WHERE id = ?',
+    [now, collectionId]
   );
 }
 
 /**
- * Clean up Unsorted list if empty
+ * Clean up Unsorted collection if empty
  * 
  * TICKET 9B: Auto-archive logic
  * 
- * Archives the Unsorted system list when all entries are removed.
+ * Archives the Unsorted system collection when all entries are removed.
  * Called automatically after deleteTask, deleteNote, deleteChecklist.
  */
-export async function cleanupUnsortedListIfEmpty(): Promise<void> {
+export async function cleanupUnsortedCollectionIfEmpty(): Promise<void> {
   const db = await getDatabase();
   
   try {
-    // Find Unsorted list
+    // Find Unsorted collection
     const unsortedList = await db.getFirstAsync<{ id: string }>(
-      'SELECT id FROM lists WHERE is_system = 1 AND deleted_at IS NULL LIMIT 1'
+      'SELECT id FROM collections WHERE is_system = 1 AND deleted_at IS NULL LIMIT 1'
     );
     
     if (!unsortedList) {
-      // No Unsorted list exists, nothing to do
+      // No Unsorted collection exists, nothing to do
       return;
     }
     
     // Count active entries in Unsorted
     const entryCount = await db.getFirstAsync<{ count: number }>(
-      'SELECT COUNT(*) as count FROM entries WHERE list_id = ? AND deleted_at IS NULL',
+      'SELECT COUNT(*) as count FROM entries WHERE collection_id = ? AND deleted_at IS NULL',
       [unsortedList.id]
     );
     
     if (entryCount && entryCount.count === 0) {
-      // No entries left - archive the Unsorted list
-      console.log('🗑️ Unsorted list is empty, archiving...');
+      // No entries left - archive the Unsorted collection
+      console.log('🗑️ Unsorted collection is empty, archiving...');
       await db.runAsync(
-        'UPDATE lists SET is_archived = 1, updated_at = ? WHERE id = ?',
+        'UPDATE collections SET is_archived = 1, updated_at = ? WHERE id = ?',
         [Date.now(), unsortedList.id]
       );
-      console.log('✅ Unsorted list archived');
+      console.log('✅ Unsorted collection archived');
     }
   } catch (error) {
-    console.error('❌ Failed to cleanup Unsorted list:', error);
+    console.error('❌ Failed to cleanup Unsorted collection:', error);
   }
 }
 
@@ -1054,7 +1054,7 @@ export async function cleanupUnsortedListIfEmpty(): Promise<void> {
  * @param newListId - The ID of the destination list
  * @param sourceListId - Optional: The ID of the source list (for Unsorted cleanup)
  */
-export async function moveEntryToList(input: {
+export async function moveEntryToCollection(input: {
   entryId: string;
   newListId: string;
   sourceListId?: string;
@@ -1063,10 +1063,10 @@ export async function moveEntryToList(input: {
   const now = Date.now();
   
   try {
-    // Update the entry's list_id
+    // Update the entry's collection_id
     await db.runAsync(
       `UPDATE entries 
-       SET list_id = ?, updated_at = ? 
+       SET collection_id = ?, updated_at = ? 
        WHERE id = ? AND deleted_at IS NULL`,
       [input.newListId, now, input.entryId]
     );
@@ -1076,13 +1076,13 @@ export async function moveEntryToList(input: {
     // If source was Unsorted, check if it needs cleanup
     if (input.sourceListId) {
       const sourceList = await db.getFirstAsync<{ is_system: number }>(
-        'SELECT is_system FROM lists WHERE id = ? AND deleted_at IS NULL',
+        'SELECT is_system FROM collections WHERE id = ? AND deleted_at IS NULL',
         [input.sourceListId]
       );
       
       if (sourceList && sourceList.is_system === 1) {
         console.log('🔍 Source was Unsorted, checking cleanup...');
-        await cleanupUnsortedListIfEmpty();
+        await cleanupUnsortedCollectionIfEmpty();
       }
     }
   } catch (error) {
@@ -1094,26 +1094,26 @@ export async function moveEntryToList(input: {
 /**
  * Toggle pin status for a list
  * 
- * TICKET 10: Pinned Lists
+ * TICKET 10: Pinned Collections
  * 
- * Defense-in-depth: SQL-level WHERE clause prevents pinning system lists (Unsorted)
- * UI also prevents showing pin controls for system lists
+ * Defense-in-depth: SQL-level WHERE clause prevents pinning system collections (Unsorted)
+ * UI also prevents showing pin controls for system collections
  * 
- * @param listId - List to pin/unpin
+ * @param collectionId - List to pin/unpin
  * @param isPinned - New pin state (true = pinned, false = unpinned)
  */
-export async function toggleListPin(listId: string, isPinned: boolean): Promise<void> {
+export async function toggleCollectionPin(collectionId: string, isPinned: boolean): Promise<void> {
   const db = await getDatabase();
   const now = Date.now();
   
   try {
-    // SQL-level defense: Only allow pinning non-system lists
+    // SQL-level defense: Only allow pinning non-system collections
     await db.runAsync(
-      'UPDATE lists SET is_pinned = ?, updated_at = ? WHERE id = ? AND is_system = 0',
-      [isPinned ? 1 : 0, now, listId]
+      'UPDATE collections SET is_pinned = ?, updated_at = ? WHERE id = ? AND is_system = 0',
+      [isPinned ? 1 : 0, now, collectionId]
     );
     
-    console.log(`📌 List ${listId} ${isPinned ? 'pinned' : 'unpinned'}`);
+    console.log(`📌 List ${collectionId} ${isPinned ? 'pinned' : 'unpinned'}`);
   } catch (error) {
     console.error('❌ Failed to toggle list pin:', error);
     throw error;
@@ -1125,18 +1125,18 @@ export async function toggleListPin(listId: string, isPinned: boolean): Promise<
  * 
  * TICKET 11A: Drag & Drop List Reordering
  * 
- * Updates sort_order and is_pinned for multiple lists atomically.
+ * Updates sort_order and is_pinned for multiple collections atomically.
  * Used after drag-and-drop to persist new ordering.
  * 
  * SAFETY GUARANTEES:
  * - Runs in transaction (atomic commit or rollback)
- * - Skips system lists (is_system = 1)
+ * - Skips system collections (is_system = 1)
  * - No gaps in sort_order (0, 1, 2, ...)
  * - Updates timestamp on all affected lists
  * 
  * @param updates - Array of {id, sort_order, is_pinned}
  */
-export async function updateListSortOrders(
+export async function updateCollectionSortOrders(
   updates: { id: string; sort_order: number; is_pinned: boolean }[]
 ): Promise<void> {
   const db = await getDatabase();
@@ -1146,9 +1146,9 @@ export async function updateListSortOrders(
     await db.execAsync('BEGIN TRANSACTION;');
     
     for (const update of updates) {
-      // Skip system lists - defense in depth
+      // Skip system collections - defense in depth
       await db.runAsync(
-        `UPDATE lists 
+        `UPDATE collections 
          SET sort_order = ?, is_pinned = ?, updated_at = ? 
          WHERE id = ? AND is_system = 0`,
         [update.sort_order, update.is_pinned ? 1 : 0, now, update.id]

@@ -6,6 +6,12 @@
  * - Dev-only invariant checks
  * - Shared validation contract for create/rename
  * - Analytics hooks for observability
+ * 
+ * TICKET 14: Lists → Collections rename
+ * - All "list" references changed to "collection"
+ * - Function names updated
+ * - Constant names updated
+ * - Comments updated
  */
 
 /**
@@ -21,7 +27,7 @@ const __DEV__ = process.env.NODE_ENV !== 'production';
 export const Analytics = {
   /**
    * Log validation error for tracking
-   * @param context - Where error occurred (e.g., 'ListsScreen.create')
+   * @param context - Where error occurred (e.g., 'CollectionsScreen.create')
    * @param errorType - Type of validation error
    * @param metadata - Additional context
    */
@@ -70,12 +76,12 @@ export interface ValidationResult {
  * Constants for validation rules
  */
 export const VALIDATION = {
-  LIST_NAME_MIN_LENGTH: 1,
-  LIST_NAME_MAX_LENGTH: 100,
+  COLLECTION_NAME_MIN_LENGTH: 1,
+  COLLECTION_NAME_MAX_LENGTH: 100,
   SORT_ORDER: {
     MIN: 0,
     MAX: 9999,
-    SYSTEM_LIST_DEFAULT: 9999,
+    SYSTEM_COLLECTION_DEFAULT: 9999,
   },
   DELAYS: {
     LONG_PRESS_DRAG: 300, // ms - consistent across app
@@ -134,10 +140,10 @@ function assertNormalizationInvariants(
  * 3. Convert to lowercase
  * 
  * EXAMPLES:
- * - "  My List  " → "my list"
- * - "My  List" (double space) → "my list"
- * - "MY LIST" → "my list"
- * - "My\tList" (tab) → "my list"
+ * - "  My Collection  " → "my collection"
+ * - "My  Collection" (double space) → "my collection"
+ * - "MY COLLECTION" → "my collection"
+ * - "My\tCollection" (tab) → "my collection"
  * 
  * @param name - Raw name string
  * @returns Canonical normalized form (for comparison only)
@@ -175,7 +181,7 @@ export function normalizeNameDisplay(name: string): string {
  * Legacy alias for backward compatibility
  * @deprecated Use normalizeNameCanonical() instead
  */
-export function normalizeListName(name: string): string {
+export function normalizeCollectionName(name: string): string {
   return normalizeNameCanonical(name);
 }
 
@@ -204,21 +210,21 @@ export function validateName(
       code: 'EMPTY_NAME',
       message: 'Name cannot be empty',
       focusField: 'name',
-      suggestion: 'Enter a name for your list',
+      suggestion: 'Enter a name for your collection',
     };
   }
 
   // Length check
-  if (display.length > VALIDATION.LIST_NAME_MAX_LENGTH) {
+  if (display.length > VALIDATION.COLLECTION_NAME_MAX_LENGTH) {
     Analytics.logValidationError(context, 'name_too_long', {
       length: display.length,
-      max: VALIDATION.LIST_NAME_MAX_LENGTH,
+      max: VALIDATION.COLLECTION_NAME_MAX_LENGTH,
     });
     return {
       valid: false,
       severity: 'error',
       code: 'NAME_TOO_LONG',
-      message: `Name cannot exceed ${VALIDATION.LIST_NAME_MAX_LENGTH} characters`,
+      message: `Name cannot exceed ${VALIDATION.COLLECTION_NAME_MAX_LENGTH} characters`,
       focusField: 'name',
       suggestion: `Current: ${display.length} chars. Please shorten.`,
     };
@@ -233,7 +239,7 @@ export function validateName(
  * Legacy function for backward compatibility
  * @deprecated Use validateName() instead
  */
-export function validateListName(name: string): string | null {
+export function validateCollectionName(name: string): string | null {
   const result = validateName(name, 'create');
   return result.valid ? null : result.message || 'Invalid name';
 }
@@ -287,7 +293,7 @@ export function isDuplicateName(
  * Legacy alias for backward compatibility
  * @deprecated Use isDuplicateName() instead
  */
-export function isDuplicateListName(
+export function isDuplicateCollectionName(
   newName: string,
   existingNames: string[],
   excludeId?: string,
@@ -337,7 +343,7 @@ export function validateNameWithDuplicateCheck(
         valid: false,
         severity: 'error',
         code: 'DUPLICATE_NAME',
-        message: 'A list with this name already exists',
+        message: 'A collection with this name already exists',
         focusField: 'name',
         suggestion: 'Try a different name',
       },
@@ -353,7 +359,7 @@ export function validateNameWithDuplicateCheck(
  * Legacy function for backward compatibility
  * @deprecated Use validateNameWithDuplicateCheck() instead
  */
-export function prepareListName(
+export function prepareCollectionName(
   name: string,
   existingNames: string[],
   excludeId?: string,
@@ -427,7 +433,7 @@ export class AppError extends Error {
 export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   [ErrorCode.EMPTY_NAME]: 'Name cannot be empty',
   [ErrorCode.NAME_TOO_LONG]: 'Name is too long',
-  [ErrorCode.DUPLICATE_NAME]: 'A list with this name already exists',
+  [ErrorCode.DUPLICATE_NAME]: 'A collection with this name already exists',
   [ErrorCode.INVALID_CHARACTERS]: 'Name contains invalid characters',
   [ErrorCode.DB_CONSTRAINT_VIOLATION]: 'This operation violates data integrity rules',
   [ErrorCode.DB_FOREIGN_KEY_VIOLATION]: 'This operation cannot be completed due to related data',

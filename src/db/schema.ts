@@ -1,9 +1,15 @@
 /**
  * SQLite schema definitions for Tetradio
  * 
+ * VERSION 5 CHANGES (Ticket 14 - Lists → Collections Rename):
+ * - Renamed lists → collections
+ * - Renamed list_id → collection_id in entries table
+ * - Renamed list_items → collection_items
+ * - All "list" references changed to "collection" throughout
+ * 
  * VERSION 4 CHANGES (Ticket 9B - Quick Create from Overview):
- * - Added is_system column to lists table
- * - Enables Unsorted list functionality (auto-create, auto-delete)
+ * - Added is_system column to collections table
+ * - Enables Unsorted collection functionality (auto-create, auto-delete)
  * 
  * VERSION 3 CHANGES (Ticket 8C Redesign - Checklist Containers):
  * - Added checklist_items table
@@ -25,7 +31,7 @@
  * - No AI fields in main schema (separate intelligence tables for future)
  */
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 /**
  * Entries Table (formerly Tasks)
@@ -33,10 +39,11 @@ export const SCHEMA_VERSION = 4;
  * 
  * VERSION 2: Added type column, renamed from tasks
  * VERSION 3: Checklists now containers (completion NOT stored here, derived from items)
+ * VERSION 5: Renamed list_id → collection_id
  * 
  * FIELD USAGE BY TYPE:
  * - type: ALL (required discriminator)
- * - title, notes, list_id: ALL (optional)
+ * - title, notes, collection_id: ALL (optional)
  * - completed, completed_at, due_date: task ONLY (NOT checklist anymore)
  * - calm_priority: task ONLY
  * - parent_task_id, snoozed_until: task ONLY (legacy fields, not used by other types)
@@ -44,7 +51,7 @@ export const SCHEMA_VERSION = 4;
  * CHECKLIST CHANGES (VERSION 3):
  * - Checklist entries do NOT use: completed, completed_at, due_date, calm_priority
  * - Completion is DERIVED from checklist_items table (all items checked = complete)
- * - Checklist entry is just a container with title + list_id
+ * - Checklist entry is just a container with title + collection_id
  * 
  * LEGACY FIELDS (task-only, unchanged from v1):
  * - parent_task_id: Subtask hierarchy (POWER feature, inactive in v1)
@@ -65,19 +72,19 @@ export const CREATE_ENTRIES_TABLE = `
     completed INTEGER DEFAULT 0 NOT NULL,
     completed_at INTEGER,
     calm_priority INTEGER CHECK(calm_priority IN (1, 2, 3)),
-    list_id TEXT,
+    collection_id TEXT,
     parent_task_id TEXT,
     snoozed_until INTEGER,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     deleted_at INTEGER,
-    FOREIGN KEY (list_id) REFERENCES lists(id) ON DELETE SET NULL,
+    FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE SET NULL,
     FOREIGN KEY (parent_task_id) REFERENCES entries(id) ON DELETE SET NULL
   );
 `;
 
 export const CREATE_ENTRIES_INDEXES = `
-  CREATE INDEX IF NOT EXISTS idx_entries_list ON entries(list_id) WHERE deleted_at IS NULL;
+  CREATE INDEX IF NOT EXISTS idx_entries_collection ON entries(collection_id) WHERE deleted_at IS NULL;
   CREATE INDEX IF NOT EXISTS idx_entries_type ON entries(type) WHERE deleted_at IS NULL;
   CREATE INDEX IF NOT EXISTS idx_entries_due_date ON entries(due_date) WHERE deleted_at IS NULL AND completed = 0;
   CREATE INDEX IF NOT EXISTS idx_entries_completed ON entries(completed, completed_at) WHERE deleted_at IS NULL;
@@ -126,13 +133,14 @@ export const CREATE_CHECKLIST_ITEMS_INDEXES = `
 `;
 
 /**
- * Lists Table
+ * Collections Table (formerly Lists)
  * Organization for tasks and items
  * 
- * VERSION 4: Added is_system column for system-managed lists (Unsorted)
+ * VERSION 4: Added is_system column for system-managed collections (Unsorted)
+ * VERSION 5: Renamed from lists → collections
  */
-export const CREATE_LISTS_TABLE = `
-  CREATE TABLE IF NOT EXISTS lists (
+export const CREATE_COLLECTIONS_TABLE = `
+  CREATE TABLE IF NOT EXISTS collections (
     id TEXT PRIMARY KEY NOT NULL,
     name TEXT NOT NULL,
     icon TEXT,
@@ -147,31 +155,33 @@ export const CREATE_LISTS_TABLE = `
   );
 `;
 
-export const CREATE_LISTS_INDEXES = `
-  CREATE INDEX IF NOT EXISTS idx_lists_active ON lists(is_archived, sort_order) WHERE deleted_at IS NULL;
-  CREATE INDEX IF NOT EXISTS idx_lists_system ON lists(is_system) WHERE deleted_at IS NULL;
+export const CREATE_COLLECTIONS_INDEXES = `
+  CREATE INDEX IF NOT EXISTS idx_collections_active ON collections(is_archived, sort_order) WHERE deleted_at IS NULL;
+  CREATE INDEX IF NOT EXISTS idx_collections_system ON collections(is_system) WHERE deleted_at IS NULL;
 `;
 
 /**
- * List Items Table
- * Simple checklist items within lists
+ * Collection Items Table (formerly List Items)
+ * Simple checklist items within collections
+ * 
+ * VERSION 5: Renamed from list_items → collection_items, list_id → collection_id
  */
-export const CREATE_LIST_ITEMS_TABLE = `
-  CREATE TABLE IF NOT EXISTS list_items (
+export const CREATE_COLLECTION_ITEMS_TABLE = `
+  CREATE TABLE IF NOT EXISTS collection_items (
     id TEXT PRIMARY KEY NOT NULL,
-    list_id TEXT NOT NULL,
+    collection_id TEXT NOT NULL,
     text TEXT NOT NULL,
     checked INTEGER DEFAULT 0 NOT NULL,
     checked_at INTEGER,
     position INTEGER DEFAULT 0 NOT NULL,
     created_at INTEGER NOT NULL,
     deleted_at INTEGER,
-    FOREIGN KEY (list_id) REFERENCES lists(id) ON DELETE CASCADE
+    FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE
   );
 `;
 
-export const CREATE_LIST_ITEMS_INDEXES = `
-  CREATE INDEX IF NOT EXISTS idx_list_items_list ON list_items(list_id, position) WHERE deleted_at IS NULL;
+export const CREATE_COLLECTION_ITEMS_INDEXES = `
+  CREATE INDEX IF NOT EXISTS idx_collection_items_collection ON collection_items(collection_id, position) WHERE deleted_at IS NULL;
 `;
 
 /**
@@ -266,10 +276,10 @@ export const INIT_SCHEMA = [
   CREATE_ENTRIES_INDEXES,
   CREATE_CHECKLIST_ITEMS_TABLE,
   CREATE_CHECKLIST_ITEMS_INDEXES,
-  CREATE_LISTS_TABLE,
-  CREATE_LISTS_INDEXES,
-  CREATE_LIST_ITEMS_TABLE,
-  CREATE_LIST_ITEMS_INDEXES,
+  CREATE_COLLECTIONS_TABLE,
+  CREATE_COLLECTIONS_INDEXES,
+  CREATE_COLLECTION_ITEMS_TABLE,
+  CREATE_COLLECTION_ITEMS_INDEXES,
   CREATE_REMINDERS_TABLE,
   CREATE_REMINDERS_INDEXES,
   CREATE_BUDGET_CATEGORIES_TABLE,
@@ -328,7 +338,7 @@ export const MIGRATE_V2_TO_V3 = [
 
 /**
  * Migration from Schema Version 3 to Version 4
- * Add is_system column to lists table
+ * Add is_system column to lists table (pre-rename)
  * 
  * TICKET: 9B - Quick Create from Overview
  * 
@@ -358,4 +368,53 @@ export const MIGRATE_V3_TO_V4 = `
   
   -- Create index for system lists
   CREATE INDEX IF NOT EXISTS idx_lists_system ON lists(is_system) WHERE deleted_at IS NULL;
+`;
+
+/**
+ * Migration from Schema Version 4 to Version 5
+ * Rename Lists → Collections (complete rename)
+ * 
+ * TICKET: 14 - Lists → Collections Rename
+ * 
+ * CHANGES:
+ * 1. Renames lists → collections
+ * 2. Renames list_items → collection_items
+ * 3. Renames list_id → collection_id in entries table
+ * 4. Recreates all indexes with new names
+ * 
+ * PRESERVES:
+ * - All existing data unchanged (rename in place)
+ * - All relationships maintained
+ * - All constraints preserved
+ * 
+ * SAFETY GUARANTEES:
+ * - Runs in transaction (automatic rollback on error)
+ * - Verifies tables were renamed
+ * - Verifies column was renamed
+ * - Idempotent (safe to run multiple times)
+ */
+export const MIGRATE_V4_TO_V5 = `
+  -- Rename lists table to collections
+  ALTER TABLE lists RENAME TO collections;
+  
+  -- Rename list_items table to collection_items
+  ALTER TABLE list_items RENAME TO collection_items;
+  
+  -- Rename list_id column to collection_id in entries table
+  ALTER TABLE entries RENAME COLUMN list_id TO collection_id;
+  
+  -- Rename list_id column to collection_id in collection_items table
+  ALTER TABLE collection_items RENAME COLUMN list_id TO collection_id;
+  
+  -- Drop old indexes
+  DROP INDEX IF EXISTS idx_lists_active;
+  DROP INDEX IF EXISTS idx_lists_system;
+  DROP INDEX IF EXISTS idx_list_items_list;
+  DROP INDEX IF EXISTS idx_entries_list;
+  
+  -- Recreate indexes with new names
+  CREATE INDEX IF NOT EXISTS idx_collections_active ON collections(is_archived, sort_order) WHERE deleted_at IS NULL;
+  CREATE INDEX IF NOT EXISTS idx_collections_system ON collections(is_system) WHERE deleted_at IS NULL;
+  CREATE INDEX IF NOT EXISTS idx_collection_items_collection ON collection_items(collection_id, position) WHERE deleted_at IS NULL;
+  CREATE INDEX IF NOT EXISTS idx_entries_collection ON entries(collection_id) WHERE deleted_at IS NULL;
 `;

@@ -16,7 +16,12 @@
  * - Added ChecklistItem type (separate table)
  * 
  * VERSION 4 CHANGES (Ticket 9B):
- * - Added is_system field to List model
+ * - Added is_system field to Collection model
+ * 
+ * VERSION 5 CHANGES (Ticket 14):
+ * - Renamed List → Collection
+ * - Renamed ListItem → CollectionItem
+ * - Renamed list_id → collection_id
  */
 
 /**
@@ -44,7 +49,7 @@ export interface Entry extends BaseModel {
   type: EntryType;
   title: string;
   notes?: string;
-  list_id?: string;
+  collection_id?: string;
   
   // Type-specific fields (nullable for types that don't use them)
   // Tasks only
@@ -68,7 +73,7 @@ export interface Task extends BaseModel {
   completed: boolean;
   completed_at?: number;
   calm_priority?: 1 | 2 | 3;
-  list_id?: string;
+  collection_id?: string;
   parent_task_id?: string;
   snoozed_until?: number;
 }
@@ -81,7 +86,7 @@ export interface Note extends BaseModel {
   type: 'note';
   title: string;
   notes?: string;  // Body text (optional)
-  list_id?: string;
+  collection_id?: string;
 }
 
 /**
@@ -91,7 +96,7 @@ export interface Note extends BaseModel {
  * VERSION 2.2: Redesigned as CONTAINER (NOT single completable item)
  * 
  * USES:
- * - id, type='checklist', title, list_id
+ * - id, type='checklist', title, collection_id
  * - created_at, updated_at, deleted_at
  * 
  * DOES NOT USE:
@@ -103,14 +108,14 @@ export interface Note extends BaseModel {
  * 
  * DEFINITION:
  * A Checklist is a CONTAINER that groups multiple ChecklistItems.
- * It appears as a single row in ListsScreen.
+ * It appears as a single row in CollectionsScreen.
  * Tapping opens ChecklistScreen showing all items.
  * Completion is derived: all items checked = checklist complete.
  */
 export interface Checklist extends BaseModel {
   type: 'checklist';
   title: string;
-  list_id?: string;
+  collection_id?: string;
 }
 
 /**
@@ -137,7 +142,7 @@ export interface ChecklistItem extends BaseModel {
 
 /**
  * Checklist with derived completion statistics
- * Used for display in ListsScreen
+ * Used for display in CollectionsScreen
  */
 export interface ChecklistWithStats extends Checklist {
   checked_count: number;
@@ -145,11 +150,12 @@ export interface ChecklistWithStats extends Checklist {
 }
 
 /**
- * List model
+ * Collection model (formerly List)
  * 
  * VERSION 4: Added is_system field
+ * VERSION 5: Renamed from List
  */
-export interface List extends BaseModel {
+export interface Collection extends BaseModel {
   name: string;
   icon?: string;
   color_hint?: string;
@@ -160,11 +166,13 @@ export interface List extends BaseModel {
 }
 
 /**
- * List Item model
+ * Collection Item model (formerly List Item)
+ * 
+ * VERSION 5: Renamed from ListItem, list_id → collection_id
  */
-export interface ListItem {
+export interface CollectionItem {
   id: string;
-  list_id: string;
+  collection_id: string;
   text: string;
   checked: boolean;
   checked_at?: number;
@@ -223,8 +231,8 @@ export type CreateTask = Omit<Task, 'id' | 'created_at' | 'updated_at' | 'delete
 export type CreateNote = Omit<Note, 'id' | 'created_at' | 'updated_at' | 'deleted_at' | 'type'>;
 export type CreateChecklist = Omit<Checklist, 'id' | 'created_at' | 'updated_at' | 'deleted_at' | 'type'>;
 export type CreateChecklistItem = Omit<ChecklistItem, 'id' | 'created_at' | 'updated_at' | 'deleted_at'>;
-export type CreateList = Omit<List, 'id' | 'created_at' | 'updated_at' | 'deleted_at'>;
-export type CreateListItem = Omit<ListItem, 'id' | 'created_at' | 'deleted_at'>;
+export type CreateCollection = Omit<Collection, 'id' | 'created_at' | 'updated_at' | 'deleted_at'>;
+export type CreateCollectionItem = Omit<CollectionItem, 'id' | 'created_at' | 'deleted_at'>;
 export type CreateReminder = Omit<Reminder, 'id' | 'created_at' | 'updated_at' | 'deleted_at'>;
 export type CreateBudgetCategory = Omit<BudgetCategory, 'id' | 'created_at' | 'updated_at' | 'deleted_at'>;
 export type CreateExpense = Omit<Expense, 'id' | 'created_at' | 'updated_at' | 'deleted_at'>;
@@ -236,8 +244,8 @@ export type UpdateTask = Partial<Omit<Task, 'id' | 'created_at' | 'deleted_at' |
 export type UpdateNote = Partial<Omit<Note, 'id' | 'created_at' | 'deleted_at' | 'type'>> & { id: string };
 export type UpdateChecklist = Partial<Omit<Checklist, 'id' | 'created_at' | 'deleted_at' | 'type'>> & { id: string };
 export type UpdateChecklistItem = Partial<Omit<ChecklistItem, 'id' | 'created_at' | 'deleted_at'>> & { id: string };
-export type UpdateList = Partial<Omit<List, 'id' | 'created_at' | 'deleted_at'>> & { id: string };
-export type UpdateListItem = Partial<Omit<ListItem, 'id' | 'created_at' | 'deleted_at'>> & { id: string };
+export type UpdateCollection = Partial<Omit<Collection, 'id' | 'created_at' | 'deleted_at'>> & { id: string };
+export type UpdateCollectionItem = Partial<Omit<CollectionItem, 'id' | 'created_at' | 'deleted_at'>> & { id: string };
 export type UpdateReminder = Partial<Omit<Reminder, 'id' | 'created_at' | 'deleted_at'>> & { id: string };
 export type UpdateBudgetCategory = Partial<Omit<BudgetCategory, 'id' | 'created_at' | 'deleted_at'>> & { id: string };
 export type UpdateExpense = Partial<Omit<Expense, 'id' | 'created_at' | 'deleted_at'>> & { id: string };

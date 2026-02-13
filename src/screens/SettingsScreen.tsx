@@ -18,7 +18,7 @@ const styles = StyleSheet.create({
 const handleCleanupOrphanedTasks = async () => {
   Alert.alert(
     'Clean Up Orphaned Tasks',
-    'This will delete tasks from lists that no longer exist. Continue?',
+    'This will delete tasks from collections that no longer exist. Continue?',
     [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -30,8 +30,8 @@ const handleCleanupOrphanedTasks = async () => {
             await db.runAsync(
               `UPDATE tasks
                SET deleted_at = datetime('now'), updated_at = datetime('now')
-               WHERE list_id IN (
-                 SELECT id FROM lists WHERE is_archived = 1
+               WHERE collection_id IN (
+                 SELECT id FROM collections WHERE is_archived = 1
                )
                AND deleted_at IS NULL`
             );
