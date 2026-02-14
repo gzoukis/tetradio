@@ -157,6 +157,7 @@ function AppContent() {
           <CollectionsScreen 
             initialCollectionId={selectedCollectionId}
             onListIdChange={setSelectedCollectionId}
+            onBack={() => setSelectedCollectionId(undefined)}
           />
         );
       case 'expenses':

@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
+  ScrollView,
 } from 'react-native';
 import ModalShell from './ModalShell';
 
@@ -13,6 +14,7 @@ export interface SelectionOption {
   icon?: string;
   color?: string;
   description?: string;
+  primary?: boolean; // Makes text blue (for "New Collection" etc)
 }
 
 interface SelectionMenuProps {
@@ -62,21 +64,26 @@ export default function SelectionMenu({
         </TouchableOpacity>
       }
     >
-      {/* Options - no wrapper View needed, ModalShell handles scroll */}
-      {options.map((option, index) => {
-        const selected = option.value === selectedValue;
+      {/* Options container with 3-item max height and scroll */}
+      <ScrollView
+        style={styles.optionsContainer}
+        showsVerticalScrollIndicator={true}
+        nestedScrollEnabled={true}
+      >
+        {options.map((option, index) => {
+          const selected = option.value === selectedValue;
 
-        return (
-          <TouchableOpacity
-            key={index}
-            style={[
-              styles.option,
-              selected && styles.optionSelected,
-              index === options.length - 1 && styles.optionLast,
-            ]}
-            onPress={() => handleSelect(option.value)}
-            activeOpacity={0.7}
-          >
+          return (
+            <TouchableOpacity
+              key={index}
+              style={[
+                styles.option,
+                selected && styles.optionSelected,
+                index === options.length - 1 && styles.optionLast,
+              ]}
+              onPress={() => handleSelect(option.value)}
+              activeOpacity={0.7}
+            >
             {option.color ? (
               <View
                 style={[
@@ -94,6 +101,7 @@ export default function SelectionMenu({
                 style={[
                   styles.optionLabel,
                   selected && styles.optionLabelSelected,
+                  option.primary && styles.optionLabelPrimary,
                 ]}
               >
                 {option.label}
@@ -109,11 +117,17 @@ export default function SelectionMenu({
           </TouchableOpacity>
         );
       })}
+      </ScrollView>
     </ModalShell>
   );
 }
 
 const styles = StyleSheet.create({
+  // Options container with max 3 items visible
+  optionsContainer: {
+    maxHeight: 220, // Shows 3 full items including their bottom borders
+  },
+
   // Header content
   title: {
     fontSize: 18,
@@ -177,6 +191,10 @@ const styles = StyleSheet.create({
 
   optionLabelSelected: {
     fontWeight: '600',
+    color: '#3b82f6',
+  },
+
+  optionLabelPrimary: {
     color: '#3b82f6',
   },
 

@@ -43,15 +43,16 @@ export default function ModalShell({
       animationType={animationType}
       onRequestClose={onClose}
     >
-      {/* Centered overlay - no platform forks */}
-      <TouchableOpacity
-        style={styles.overlay}
-        activeOpacity={1}
-        onPress={onClose}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+        style={styles.keyboardView}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : -100}
       >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.keyboardView}
+        {/* Centered overlay */}
+        <TouchableOpacity
+          style={styles.overlay}
+          activeOpacity={1}
+          onPress={onClose}
         >
           {/* Stop propagation to prevent closing when tapping modal content */}
           <TouchableOpacity
@@ -60,7 +61,7 @@ export default function ModalShell({
             style={styles.modalContainer}
           >
             {/* Wrapper with maxHeight constraint */}
-            <View style={[styles.wrapper, { maxHeight: SCREEN_HEIGHT * 0.85 }]}>
+            <View style={[styles.wrapper, { maxHeight: SCREEN_HEIGHT * 0.75 }]}>
               {/* Card container with overflow hidden for rounded corners */}
               <View style={styles.card}>
                 {/* Optional Header */}
@@ -109,8 +110,8 @@ export default function ModalShell({
               </View>
             </View>
           </TouchableOpacity>
-        </KeyboardAvoidingView>
-      </TouchableOpacity>
+        </TouchableOpacity>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -122,13 +123,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.4)',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 16,
   },
 
   // KeyboardAvoidingView wrapper
   keyboardView: {
-    width: '100%',
-    alignItems: 'center',
+    flex: 1,
   },
 
   // Modal container
@@ -139,8 +138,10 @@ const styles = StyleSheet.create({
 
   // Wrapper with maxHeight constraint
   wrapper: {
-    width: '78%',
+    width: '88%',
     maxWidth: 480,
+    maxHeight: '75%', // Reduced from 80% for more keyboard space
+    marginHorizontal: 16,
   },
 
   // Card - the visible modal box
