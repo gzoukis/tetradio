@@ -13,6 +13,7 @@ import {
   RefreshControl,
   Alert,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { getAllActiveTasks, getAllCollections, createTask, createNote, getOrCreateUnsortedCollection, createCollection } from '../db/operations';
 import { createChecklistWithItems } from '../db/operations';
 import type { TaskWithCollectionName } from '../db/operations';
@@ -20,6 +21,7 @@ import type { Collection } from '../types/models';
 import { groupTasksByTime } from '../utils/timeClassification';
 import { getPriorityLabel } from '../utils/formatting';
 import type { TaskFilter } from '../types/filters';
+import { colors, spacing, typography, elevation, borderRadius, sizes, opacity } from '../theme/tokens';
 
 type QuickCreateMode = 'entry' | 'new-collection';
 
@@ -192,23 +194,21 @@ export default function OverviewScreen({
 
   const grouped = groupTasksByTime(tasks);
 
-  // FIX 2: Custom Organize section logic - includes Unsorted tasks
-  // Tasks shown in Organize:
-  // 1. No-date tasks (any collection)
-  // 2. Unsorted tasks WITH dates (show in both time cards AND Organize)
+  // TICKET 17C.1: Organize section logic - NO DUPLICATION
+  // Clean mental model:
+  // - Time sections (Today/Upcoming/Overdue) = Execution (what to do when)
+  // - Organize section = Structure (what needs planning)
+  // 
+  // Organize shows ONLY:
+  // 1. Tasks with NO due date (any collection)
+  // 
+  // Organize does NOT show:
+  // - Tasks with due dates (even if Unsorted)
+  // - Those appear in time-based sections with "No collection" metadata
   const organizeTasks = useMemo(() => {
-    const noDateTasks = grouped.no_date;
-    const unsortedWithDate = tasks.filter(t => 
-      !t.completed && 
-      t.list_name === 'Unsorted' && 
-      t.due_date
-    );
-    
-    // Combine and deduplicate
-    const combined = [...noDateTasks, ...unsortedWithDate];
-    const unique = Array.from(new Map(combined.map(t => [t.id, t])).values());
-    return unique;
-  }, [tasks, grouped.no_date]);
+    // Simply use grouped.no_date - no duplication
+    return grouped.no_date;
+  }, [grouped.no_date]);
 
   if (loading) {
     return (
@@ -220,18 +220,23 @@ export default function OverviewScreen({
 
   return (
     <>
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.content}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            tintColor="#1F4FA3"
-            colors={['#1F4FA3']}
-          />
-        }
+      {/* TICKET 17C: Metallic notebook cover gradient */}
+      <LinearGradient
+        colors={colors.overviewGradient}
+        style={styles.gradientContainer}
       >
+        <ScrollView
+          style={styles.container}
+          contentContainerStyle={styles.content}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={colors.textOnDark}
+              colors={[colors.accentPrimary]}
+            />
+          }
+        >
         {/* TICKET 17B: Tetradio Notebook-Style Smart Section Cards */}
         
         {/* Needs Attention (Overdue) - FIX 2: Only show if overdue tasks exist */}
@@ -292,7 +297,9 @@ export default function OverviewScreen({
                 key={collection.id}
                 style={styles.pinnedListRow}
                 onPress={() => goToCollections(collection.id)}
-                activeOpacity={0.7}
+                activeOpacity={opacity.touchActive}
+                accessibilityRole="button"
+                accessibilityLabel={`Open ${collection.name} collection`}
               >
                 <Text style={styles.pinnedListIcon}>{collection.icon || '📋'}</Text>
                 <Text style={styles.pinnedListName}>{collection.name}</Text>
@@ -324,10 +331,13 @@ export default function OverviewScreen({
       <TouchableOpacity
         style={styles.fab}
         onPress={handleOpenQuickCreate}
-        activeOpacity={0.8}
+        activeOpacity={opacity.touchActive}
+        accessibilityRole="button"
+        accessibilityLabel="Create new task or note"
       >
         <Text style={styles.fabText}>+</Text>
       </TouchableOpacity>
+      </LinearGradient>
 
       {/* Quick Create Modal - Entry Mode */}
       {quickCreateMode === 'entry' && (
@@ -385,32 +395,59 @@ export default function OverviewScreen({
 }
 
 const styles = StyleSheet.create({
-  // TICKET 17B: Tetradio Notebook Theme - FIX 6: Blue background from inspiration
-  container: { flex: 1, backgroundColor: '#1E3A8A' },  // Deep blue from inspiration
-  content: { padding: 16, paddingBottom: 100 },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { fontSize: 16, color: '#666' },
-  pageTitle: { fontSize: 32, fontWeight: 'bold', marginBottom: 4, color: '#FFFFFF' },  // FIX 6: White text on blue
-  pageSubtitle: { fontSize: 16, color: '#CBD5E1', marginBottom: 24 },  // FIX 6: Light blue-gray text
+  // TICKET 17C: Metallic notebook cover - gradient container
+  gradientContainer: {
+    flex: 1,
+  },
+  container: {
+    flex: 1,
+  },
+  content: {
+    padding: spacing.screenPadding,
+    paddingBottom: 100,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    ...typography.body,
+    color: colors.textSecondary,
+  },
+  pageTitle: {
+    ...typography.pageTitle,
+    color: colors.textOnDark,
+    marginBottom: 4,
+  },
+  pageSubtitle: {
+    ...typography.pageSubtitle,
+    color: colors.textLight,
+    marginBottom: 24,
+  },
   section: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    marginHorizontal: '5%',  // FIX 1: Match SmartSectionCard width
+    backgroundColor: colors.backgroundCard,
+    borderRadius: borderRadius.card,
+    padding: spacing.cardPadding,
+    marginBottom: spacing.cardGap,
+    marginHorizontal: spacing.sectionMarginHorizontal,
   },
   sectionOverdue: {
     backgroundColor: '#fef2f2',
     borderLeftWidth: 4,
-    borderLeftColor: '#ef4444',
+    borderLeftColor: colors.accentUrgent,
   },
-  sectionTitle: { fontSize: 14, fontWeight: '700', marginBottom: 12 },
+  sectionTitle: {
+    ...typography.sectionTitle,
+    marginBottom: 12,
+  },
   pinnedListRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#f3f4f6',
+    minHeight: spacing.minTouchTarget,  // TICKET 17C: Accessibility
   },
   pinnedListIcon: {
     fontSize: 20,
@@ -418,53 +455,79 @@ const styles = StyleSheet.create({
   },
   pinnedListName: {
     flex: 1,
-    fontSize: 16,
-    color: '#1a1a1a',
+    ...typography.body,
+    color: colors.textPrimary,
     fontWeight: '500',
   },
   chevron: {
     fontSize: 20,
-    color: '#9ca3af',
+    color: colors.textMuted,
   },
   taskPreview: {
     paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#f3f4f6',
   },
-  taskPreviewTitle: { fontSize: 15 },
-  taskPreviewList: { fontSize: 12, color: '#9ca3af', marginTop: 2 },
-  viewAllButton: { marginTop: 12 },
-  viewAllText: { color: '#3b82f6', fontWeight: '600' },
-  emptyMessage: { fontStyle: 'italic', color: '#9ca3af' },
+  taskPreviewTitle: {
+    fontSize: 15,
+  },
+  taskPreviewList: {
+    ...typography.meta,
+    color: colors.textMuted,
+    marginTop: 2,
+  },
+  viewAllButton: {
+    marginTop: 12,
+  },
+  viewAllText: {
+    color: colors.accentPrimary,
+    fontWeight: '600',
+  },
+  emptyMessage: {
+    fontStyle: 'italic',
+    color: colors.textMuted,
+  },
   hintSection: {
     backgroundColor: '#f3f4f6',
-    borderRadius: 8,
+    borderRadius: borderRadius.button,
     padding: 12,
     marginBottom: 12,
   },
-  hintText: { fontSize: 14, color: '#6b7280' },
-  emptyContainer: { alignItems: 'center', paddingVertical: 80 },
-  emptyText: { fontSize: 18, fontWeight: '600', marginBottom: 8 },
-  emptySubtext: { fontSize: 14, color: '#9ca3af', textAlign: 'center' },
+  hintText: {
+    ...typography.body,
+    color: colors.textSecondary,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    paddingVertical: 80,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  emptySubtext: {
+    ...typography.body,
+    color: colors.textMuted,
+    textAlign: 'center',
+  },
   
-  // FAB
+  // TICKET 17C: FAB with tokens and elevation
   fab: {
     position: 'absolute',
     right: 20,
     bottom: 20,
-    width: 48,  // FIX 5: 15% smaller (from 56 to 48)
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#FCD34D',  // FIX 5: Light yellow to differentiate from blue background
+    ...sizes.fab,
+    borderRadius: borderRadius.fab,
+    backgroundColor: colors.fabBackground,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 6,
+    ...elevation.fab,
   },
-  fabText: { fontSize: 28, color: '#1F4FA3', fontWeight: '600' },  // FIX 5: Smaller text, blue color for contrast
+  fabText: {
+    ...typography.fabIcon,
+    color: colors.fabIcon,
+  },
   
   // Modal
   modalContainer: { flex: 1 },

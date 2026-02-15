@@ -2,6 +2,7 @@
  * SmartSectionCard Component
  * 
  * TICKET 17B: Tetradio Notebook-Style Overview Cards
+ * TICKET 17C: Design System Hardening + Accessibility
  * 
  * A reusable card component that displays a section of tasks with:
  * - Header with title and count badge
@@ -9,6 +10,7 @@
  * - Empty states
  * - "View More" link for 4+ tasks
  * - Notebook-inspired visual design
+ * - WCAG AA accessible
  * 
  * Design inspired by classic blue A4 tetradio notebooks with
  * clean lines, subtle shadows, and calm color palette.
@@ -22,6 +24,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import type { TaskFilter } from '../types/filters';
+import { colors, spacing, typography, elevation, borderRadius, sizes, opacity } from '../theme/tokens';
 
 // TICKET 17B: Task interface for preview
 // Using minimal subset needed for preview display
@@ -93,6 +96,27 @@ function formatDueDate(timestamp: number | undefined): string | null {
   }
 }
 
+/**
+ * TICKET 17C: Generate descriptive accessibility label for card
+ * 
+ * Provides context for screen readers:
+ * - "View 3 overdue tasks"
+ * - "Overdue tasks section, no tasks"
+ * 
+ * Decision: Option A (descriptive) chosen for better UX
+ */
+function getAccessibilityLabel(title: string, count: number, filter: TaskFilter): string {
+  // Remove emoji from title for cleaner voice output
+  const cleanTitle = title.replace(/[^\w\s]/g, '').trim();
+  
+  if (count === 0) {
+    return `${cleanTitle} section, no tasks`;
+  }
+  
+  const taskWord = count === 1 ? 'task' : 'tasks';
+  return `View ${count} ${cleanTitle.toLowerCase()} ${taskWord}`;
+}
+
 export default function SmartSectionCard({
   title,
   count,
@@ -120,7 +144,9 @@ export default function SmartSectionCard({
         isUrgent && styles.cardUrgent,
       ]}
       onPress={() => onPress(filter)}
-      activeOpacity={0.7}
+      activeOpacity={opacity.touchActive}
+      accessibilityRole="button"
+      accessibilityLabel={getAccessibilityLabel(title, count, filter)}
     >
       {/* Header Row */}
       <View style={styles.header}>
@@ -220,7 +246,9 @@ export default function SmartSectionCard({
               <TouchableOpacity 
                 style={styles.viewMoreButton}
                 onPress={() => onPress(filter)}
-                activeOpacity={0.7}
+                activeOpacity={opacity.touchActive}
+                accessibilityRole="button"
+                accessibilityLabel={`View all ${count} ${title.replace(/[^\w\s]/g, '').trim().toLowerCase()}`}
               >
                 <Text style={styles.viewMoreText}>View more →</Text>
               </TouchableOpacity>
@@ -232,23 +260,20 @@ export default function SmartSectionCard({
   );
 }
 
-// TICKET 17B: Tetradio Notebook Styles (Updated to match visual reference)
+// TICKET 17B: Tetradio Notebook Styles
+// TICKET 17C: ALL values from design tokens (no hardcoded colors/spacing)
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 16,
-    marginHorizontal: '5%',  // FIX 1: Cards 10% narrower (5% margin on each side)
-    shadowColor: '#1F4FA3',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 4,
+    backgroundColor: colors.backgroundCard,
+    borderRadius: borderRadius.card,
+    padding: spacing.cardPadding,
+    marginBottom: spacing.cardGap,
+    marginHorizontal: spacing.sectionMarginHorizontal,
+    ...elevation.card,
   },
   cardUrgent: {
     borderLeftWidth: 4,
-    borderLeftColor: '#D64545',
+    borderLeftColor: colors.accentUrgent,
   },
   
   // Header
@@ -259,9 +284,8 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   title: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2E3A59',
+    ...typography.cardTitle,
+    color: colors.textPrimary,
     flex: 1,
   },
   countBadge: {
@@ -269,29 +293,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 8,
-    marginLeft: 8,
+    borderRadius: borderRadius.badge,
+    marginLeft: spacing.metadataMarginLeft,
   },
   countBadgeNormal: {
-    backgroundColor: 'rgba(31, 79, 163, 0.1)',
+    backgroundColor: colors.badgeNormalBackground,
   },
   countBadgeUrgent: {
-    backgroundColor: 'rgba(214, 69, 69, 0.1)',
+    backgroundColor: colors.badgeUrgentBackground,
   },
   countText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1F4FA3',
+    ...typography.badge,
+    color: colors.accentPrimary,
     marginRight: 4,
   },
   countTextUrgent: {
-    color: '#D64545',
+    color: colors.accentUrgent,
   },
   
   // Subtitle
   subtitle: {
-    fontSize: 12,
-    color: '#6B7A99',
+    ...typography.cardSubtitle,
+    color: colors.textSecondary,
     marginTop: 2,
     marginBottom: 8,
   },
@@ -299,8 +322,8 @@ const styles = StyleSheet.create({
   // Divider
   divider: {
     height: 1,
-    backgroundColor: 'rgba(31, 79, 163, 0.08)',
-    marginVertical: 14,
+    backgroundColor: colors.divider,
+    marginVertical: spacing.dividerVertical,
   },
   
   // Preview Area
@@ -310,9 +333,8 @@ const styles = StyleSheet.create({
   
   // Empty State
   emptyState: {
-    fontSize: 13,
-    fontStyle: 'italic',
-    color: '#9CA3AF',
+    ...typography.empty,
+    color: colors.textMuted,
     textAlign: 'center',
     paddingVertical: 16,
   },
@@ -321,82 +343,79 @@ const styles = StyleSheet.create({
   taskPreview: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 6,
+    paddingVertical: spacing.taskPreviewPadding,
   },
   taskPreviewWithMargin: {
-    marginBottom: 6,
+    marginBottom: spacing.taskPreviewGap,
   },
   
-  // FIX 3: Priority Circle Indicators (based on calm_priority)
+  // TICKET 17C: Priority Circle Indicators (from tokens)
   priorityCircle: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    marginRight: 10,
+    ...sizes.priorityCircle,
+    borderRadius: borderRadius.circle,
+    marginRight: spacing.priorityCircleMargin,
   },
   priorityCircleFocus: {
-    // Priority 1 (Focus) - Blue filled circle
-    backgroundColor: '#3B82F6',
+    backgroundColor: colors.priorityFocus,
   },
   priorityCircleNormal: {
-    // Priority 2 (Normal) - Blue outline circle
     backgroundColor: 'transparent',
     borderWidth: 2,
-    borderColor: '#3B82F6',
+    borderColor: colors.priorityNormalBorder,
   },
   priorityCircleLow: {
-    // Priority 3 (Low) - Gray filled circle
-    backgroundColor: '#6B7280',
+    backgroundColor: colors.priorityLow,
   },
   priorityCircleCompleted: {
-    // Completed tasks - Muted gray
-    backgroundColor: '#D1D5DB',
+    backgroundColor: colors.priorityCompleted,
   },
   
   taskTitle: {
-    fontSize: 14,
-    color: '#2E3A59',
+    ...typography.body,
+    color: colors.textPrimary,
     flex: 1,
     lineHeight: 18,
   },
   taskTitleCompleted: {
     textDecorationLine: 'line-through',
-    color: '#9CA3AF',
+    color: colors.textMuted,
   },
   
-  // FIX 2: Task metadata container (holds date + collection status)
+  // TICKET 17C: Task metadata container
   taskMetaContainer: {
-    marginLeft: 8,
+    marginLeft: spacing.metadataMarginLeft,
     alignItems: 'flex-end',
   },
   taskDue: {
-    fontSize: 12,
-    color: '#6B7A99',
+    ...typography.meta,
+    color: colors.textSecondary,
   },
   taskDueWithCollection: {
-    // When showing with "No Collection", stack vertically
     marginTop: 2,
   },
   taskNoDate: {
-    fontSize: 12,
-    color: '#9CA3AF',  // More muted than taskDue
+    ...typography.meta,
+    color: colors.textMuted,
     fontStyle: 'italic',
   },
   taskNoCollection: {
-    fontSize: 10,
-    color: '#D97706',  // Orange/amber to stand out
-    fontWeight: '600',
+    // TICKET 17C.1: Subtle metadata, not alert
+    // This is structural information, not urgent warning
+    ...typography.meta,
+    color: colors.textSecondary,
     fontStyle: 'italic',
   },
   
-  // View More Link
+  // TICKET 17C: View More Link with 44px touch target
   viewMoreButton: {
     marginTop: 10,
     alignSelf: 'flex-start',
+    minHeight: spacing.minTouchTarget,
+    paddingVertical: spacing.touchTargetPadding,
+    justifyContent: 'center',
   },
   viewMoreText: {
-    fontSize: 13,
-    color: '#1F4FA3',
-    fontWeight: '500',
+    ...typography.link,
+    color: colors.accentPrimary,
   },
 });

@@ -13,6 +13,7 @@
     "expo": "~54.0.31",
     "expo-crypto": "~15.0.8",
     "expo-dev-client": "~6.0.20",
+    "expo-linear-gradient": "^15.0.8",
     "expo-sqlite": "~16.0.10",
     "expo-status-bar": "~3.0.9",
     "react": "19.1.0",
