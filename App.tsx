@@ -142,9 +142,9 @@ function AppContent() {
   }, []);
 
   // TICKET 17A BUG FIX: Stable callback to prevent infinite loop
-  // Must be memoized so TasksScreen's useEffect doesn't trigger on every render
+  // FIX 1 (17B): Clear fromOverview flag when filter changes internally
   const handleFilterChange = useCallback((filter: TaskFilter) => {
-    setTaskViewState({ filter });
+    setTaskViewState({ filter, fromOverview: false });
   }, []);
 
   const renderScreen = () => {
@@ -163,7 +163,8 @@ function AppContent() {
           <TasksScreen 
             initialFilter={taskViewState?.filter ?? 'all'}
             onFilterChange={handleFilterChange}
-            goToCollections={() => setTab('collections')} 
+            goToCollections={() => setTab('collections')}
+            fromOverview={taskViewState?.fromOverview ?? false}  // FIX 1: Pass flag
           />
         );
       case 'collections':
@@ -183,9 +184,11 @@ function AppContent() {
           <OverviewScreen 
             onViewTasks={(filter) => {
               // TICKET 17A: Deep linking to TasksScreen with filter
-              // If filter provided: preserve it (user expects to see that view)
-              // If no filter: reset to 'all' (default view)
-              setTaskViewState({ filter: filter ?? 'all' });
+              // FIX 1 (17B): Set fromOverview flag to control empty state
+              setTaskViewState({ 
+                filter: filter ?? 'all',
+                fromOverview: true,  // Mark as coming from Overview card
+              });
               setTab('tasks');
             }}
             goToCollections={(listId) => {

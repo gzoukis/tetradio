@@ -36,6 +36,10 @@ export type TaskFilter =
  * Container for task view configuration passed from Overview/navigation.
  * Designed for future extensibility without architecture changes.
  * 
+ * FIX 1 (17B): Added fromOverview flag to control empty state persistence
+ * - Only show empty state when explicitly navigating FROM Overview card
+ * - Prevents message flash on subsequent navigation
+ * 
  * Future additions might include:
  * - scrollToTaskId?: string
  * - focusMode?: boolean
@@ -44,4 +48,5 @@ export type TaskFilter =
  */
 export interface TaskViewState {
   filter: TaskFilter;
+  fromOverview?: boolean;  // FIX 1: True when navigating from Overview card click
 }

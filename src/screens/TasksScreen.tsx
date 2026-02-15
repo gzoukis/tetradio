@@ -28,16 +28,19 @@ interface TaskSection {
 export default function TasksScreen({ 
   initialFilter = 'all',
   onFilterChange,
-  goToCollections 
+  goToCollections,
+  fromOverview = false,  // FIX 1: Track if navigating from Overview
 }: { 
   initialFilter?: TaskFilter;
   onFilterChange?: (filter: TaskFilter) => void;
   goToCollections: () => void;
+  fromOverview?: boolean;  // FIX 1: Control empty state display
 }) {
   const [sections, setSections] = useState<TaskSection[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [completedCollapsed, setCompletedCollapsed] = useState(true);
+  const [showEmptyState, setShowEmptyState] = useState(fromOverview);  // FIX 1: Only show initially if from Overview
   const [priorityMenuVisible, setPriorityMenuVisible] = useState(false);
   const [selectedTaskForPriority, setSelectedTaskForPriority] = useState<TaskWithCollectionName | null>(null);
   
@@ -400,16 +403,99 @@ export default function TasksScreen({
     );
   }
 
+  // FIX 2: Check if truly empty (no tasks at all)
   if (!sections.length) {
+    const hasAnyTasks = allTasks.length > 0;
+    
+    if (!hasAnyTasks) {
+      // FIX 2: No tasks exist anywhere - ALWAYS show this message
+      return (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyTitle}>Nothing here yet</Text>
+          <Text style={styles.emptyText}>
+            Create a collection and add items to get started.
+          </Text>
+
+          <TouchableOpacity onPress={goToCollections} style={styles.goToListsButton}>
+            <Text style={styles.goToListsText}>Go to Collections</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    
+    // FIX 3: Filter has 0 items but tasks exist - auto-clear filter
+    if (!showEmptyState) {
+      // User navigated here not from Overview (e.g., tab switch)
+      // Clear filter and show all tasks
+      if (activeFilter !== 'all') {
+        setActiveFilter('all');
+        setShowEmptyState(false);
+      }
+      // Return null briefly while filter clears
+      return null;
+    }
+    
+    // FIX 1 & 7: Filtered empty state (only when from Overview)
+    // Tasks exist but filter is empty - show category message
+    const getEmptyMessage = () => {
+      switch (activeFilter) {
+        case 'today':
+          return {
+            title: 'Nothing scheduled for today',
+            subtitle: 'You have tasks in other categories.'
+          };
+        case 'overdue':
+          return {
+            title: 'All clear!',
+            subtitle: 'No overdue tasks. Great job staying on top of things!'
+          };
+        case 'upcoming':
+          return {
+            title: 'No upcoming tasks',
+            subtitle: 'You have tasks in other categories.'
+          };
+        case 'no-date':
+          return {
+            title: 'All current tasks are organized',
+            subtitle: 'Every task has a due date assigned.'
+          };
+        case 'completed':
+          return {
+            title: 'No completed tasks yet',
+            subtitle: 'Complete some tasks to see them here.'
+          };
+        default:
+          return {
+            title: 'No tasks in this view',
+            subtitle: 'Try a different filter or create new tasks.'
+          };
+      }
+    };
+    
+    const message = getEmptyMessage();
+    
     return (
       <View style={styles.emptyContainer}>
-        <Text style={styles.emptyTitle}>Nothing here yet</Text>
-        <Text style={styles.emptyText}>
-          Create a collection and add items to get started.
-        </Text>
+        <Text style={styles.emptyTitle}>{message.title}</Text>
+        <Text style={styles.emptyText}>{message.subtitle}</Text>
 
-        <TouchableOpacity onPress={goToCollections} style={styles.goToListsButton}>
-          <Text style={styles.goToListsText}>Go to Collections</Text>
+        <TouchableOpacity 
+          onPress={() => {
+            setActiveFilter('all');
+            setShowEmptyState(false);  // FIX 1: Don't show empty state again
+          }}
+          style={styles.goToListsButton}
+        >
+          <Text style={styles.goToListsText}>View All Tasks</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          onPress={goToCollections} 
+          style={[styles.goToListsButton, styles.secondaryButton]}
+        >
+          <Text style={[styles.goToListsText, styles.secondaryButtonText]}>
+            Go to Collections
+          </Text>
         </TouchableOpacity>
       </View>
     );
@@ -615,6 +701,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 8,
+    marginTop: 12,  // FIX 7: Spacing between buttons
   },
   goToListsText: { color: '#fff', fontWeight: '600' },
+  
+  // FIX 7: Secondary button styles
+  secondaryButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    borderColor: '#3b82f6',
+  },
+  secondaryButtonText: {
+    color: '#3b82f6',
+  },
 });

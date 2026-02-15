@@ -2,7 +2,8 @@ import DatePickerButton from '../components/DatePickerButton';
 import CreateEntryModal, { CreateEntryPayload } from '../components/CreateEntryModal';
 import InputModal from '../components/InputModal';
 import SelectionMenu, { SelectionOption } from '../components/SelectionMenu';
-import React, { useState, useEffect } from 'react';
+import SmartSectionCard from '../components/SmartSectionCard';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -191,16 +192,23 @@ export default function OverviewScreen({
 
   const grouped = groupTasksByTime(tasks);
 
-  const renderTaskPreview = (task: TaskWithCollectionName) => (
-    <View key={task.id} style={styles.taskPreview}>
-      <Text style={styles.taskPreviewTitle} numberOfLines={1}>
-        • {task.title}
-      </Text>
-      {task.list_name && (
-        <Text style={styles.taskPreviewList}>{task.list_name}</Text>
-      )}
-    </View>
-  );
+  // FIX 2: Custom Organize section logic - includes Unsorted tasks
+  // Tasks shown in Organize:
+  // 1. No-date tasks (any collection)
+  // 2. Unsorted tasks WITH dates (show in both time cards AND Organize)
+  const organizeTasks = useMemo(() => {
+    const noDateTasks = grouped.no_date;
+    const unsortedWithDate = tasks.filter(t => 
+      !t.completed && 
+      t.list_name === 'Unsorted' && 
+      t.due_date
+    );
+    
+    // Combine and deduplicate
+    const combined = [...noDateTasks, ...unsortedWithDate];
+    const unique = Array.from(new Map(combined.map(t => [t.id, t])).values());
+    return unique;
+  }, [tasks, grouped.no_date]);
 
   if (loading) {
     return (
@@ -219,112 +227,59 @@ export default function OverviewScreen({
           <RefreshControl
             refreshing={refreshing}
             onRefresh={handleRefresh}
-            tintColor="#3b82f6"
-            colors={['#3b82f6']}
+            tintColor="#1F4FA3"
+            colors={['#1F4FA3']}
           />
         }
       >
-        <Text style={styles.pageTitle}>Overview</Text>
-        <Text style={styles.pageSubtitle}>Your tasks at a glance</Text>
-
-        {/* Overdue */}
+        {/* TICKET 17B: Tetradio Notebook-Style Smart Section Cards */}
+        
+        {/* Needs Attention (Overdue) - FIX 2: Only show if overdue tasks exist */}
         {grouped.overdue.length > 0 && (
-          <View style={[styles.section, styles.sectionOverdue]}>
-            <TouchableOpacity 
-              onPress={() => onViewTasks('overdue')}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.sectionTitle}>
-                ⚠️ Overdue ({grouped.overdue.length})
-              </Text>
-            </TouchableOpacity>
-            {grouped.overdue.slice(0, 3).map(renderTaskPreview)}
-            {grouped.overdue.length > 3 && (
-              <TouchableOpacity style={styles.viewAllButton} onPress={() => onViewTasks('overdue')}>
-                <Text style={styles.viewAllText}>
-                  View all {grouped.overdue.length} overdue â†’
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
+          <SmartSectionCard
+            title="🔴 Needs Attention"
+            count={grouped.overdue.length}
+            tasks={grouped.overdue}
+            filter="overdue"
+            onPress={onViewTasks}
+            accent="urgent"
+            emptyMessage="All clear. Nothing overdue."
+          />
         )}
 
-        {/* Today */}
-        {grouped.today.length > 0 ? (
-          <View style={styles.section}>
-            <TouchableOpacity 
-              onPress={() => onViewTasks('today')}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.sectionTitle}>
-                Today ({grouped.today.length})
-              </Text>
-            </TouchableOpacity>
-            {grouped.today.slice(0, 5).map(renderTaskPreview)}
-            {grouped.today.length > 5 && (
-              <TouchableOpacity style={styles.viewAllButton} onPress={() => onViewTasks('today')}>
-                <Text style={styles.viewAllText}>
-                  View all {grouped.today.length} tasks â†’
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        ) : (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Today</Text>
-            <Text style={styles.emptyMessage}>Nothing due today</Text>
-          </View>
-        )}
+        {/* Focus Today */}
+        <SmartSectionCard
+          title="⭐ Focus Today"
+          count={grouped.today.length}
+          tasks={grouped.today}
+          filter="today"
+          onPress={onViewTasks}
+          emptyMessage="Nothing scheduled for today."
+        />
 
-        {/* Upcoming */}
-        {grouped.upcoming.length > 0 && (
-          <View style={styles.section}>
-            <TouchableOpacity 
-              onPress={() => onViewTasks('upcoming')}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.sectionTitle}>
-                Upcoming ({grouped.upcoming.length})
-              </Text>
-            </TouchableOpacity>
-            {grouped.upcoming.slice(0, 3).map(renderTaskPreview)}
-            {grouped.upcoming.length > 3 && (
-              <TouchableOpacity style={styles.viewAllButton} onPress={() => onViewTasks('upcoming')}>
-                <Text style={styles.viewAllText}>View all upcoming â†’</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
+        {/* Coming Up (Upcoming) */}
+        <SmartSectionCard
+          title="⏳ Coming Up"
+          count={grouped.upcoming.length}
+          tasks={grouped.upcoming}
+          filter="upcoming"
+          onPress={onViewTasks}
+          emptyMessage="No upcoming tasks yet."
+        />
 
-
-
-        {/* Hints */}
-        {grouped.no_date.length > 0 && (
-          <TouchableOpacity 
-            style={styles.hintSection}
-            onPress={() => onViewTasks('no-date')}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.hintText}>
-              📋 {grouped.no_date.length} task
-              {grouped.no_date.length === 1 ? '' : 's'} without a due date
-            </Text>
-          </TouchableOpacity>
-        )}
-
-        {grouped.completed.length > 0 && (
-          <TouchableOpacity 
-            style={styles.hintSection}
-            onPress={() => onViewTasks('completed')}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.hintText}>
-              ✓ {grouped.completed.length} completed task
-              {grouped.completed.length === 1 ? '' : 's'}
-            </Text>
-          </TouchableOpacity>
-        )}
-
+        {/* Organize (No Date + Completed Count) */}
+        <SmartSectionCard
+          title="📁 Organize"
+          count={organizeTasks.length}
+          tasks={organizeTasks}
+          filter="no-date"
+          onPress={onViewTasks}
+          emptyMessage="Everything is organized."
+          subtitle={grouped.completed.length > 0 
+            ? `${grouped.completed.length} completed task${grouped.completed.length === 1 ? '' : 's'}`
+            : undefined
+          }
+        />
 
         {/* Pinned Collections */}
         {pinnedCollections.length > 0 ? (
@@ -430,17 +385,19 @@ export default function OverviewScreen({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f9fafb' },
+  // TICKET 17B: Tetradio Notebook Theme - FIX 6: Blue background from inspiration
+  container: { flex: 1, backgroundColor: '#1E3A8A' },  // Deep blue from inspiration
   content: { padding: 16, paddingBottom: 100 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingText: { fontSize: 16, color: '#666' },
-  pageTitle: { fontSize: 32, fontWeight: 'bold', marginBottom: 4 },
-  pageSubtitle: { fontSize: 16, color: '#6b7280', marginBottom: 24 },
+  pageTitle: { fontSize: 32, fontWeight: 'bold', marginBottom: 4, color: '#FFFFFF' },  // FIX 6: White text on blue
+  pageSubtitle: { fontSize: 16, color: '#CBD5E1', marginBottom: 24 },  // FIX 6: Light blue-gray text
   section: {
     backgroundColor: '#fff',
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
+    marginHorizontal: '5%',  // FIX 1: Match SmartSectionCard width
   },
   sectionOverdue: {
     backgroundColor: '#fef2f2',
@@ -495,10 +452,10 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 20,
     bottom: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#3b82f6',
+    width: 48,  // FIX 5: 15% smaller (from 56 to 48)
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#FCD34D',  // FIX 5: Light yellow to differentiate from blue background
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
@@ -507,7 +464,7 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 6,
   },
-  fabText: { fontSize: 32, color: '#fff', fontWeight: '300' },
+  fabText: { fontSize: 28, color: '#1F4FA3', fontWeight: '600' },  // FIX 5: Smaller text, blue color for contrast
   
   // Modal
   modalContainer: { flex: 1 },
