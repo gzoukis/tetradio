@@ -50,7 +50,6 @@ export interface Entry extends BaseModel {
   title: string;
   notes?: string;
   collection_id?: string;
-  sort_order: number;
   
   // Type-specific fields (nullable for types that don't use them)
   // Tasks only
@@ -77,7 +76,6 @@ export interface Task extends BaseModel {
   collection_id?: string;
   parent_task_id?: string;
   snoozed_until?: number;
-  sort_order: number;
 }
 
 /**
@@ -89,7 +87,6 @@ export interface Note extends BaseModel {
   title: string;
   notes?: string;  // Body text (optional)
   collection_id?: string;
-  sort_order: number;
 }
 
 /**
@@ -99,7 +96,7 @@ export interface Note extends BaseModel {
  * VERSION 2.2: Redesigned as CONTAINER (NOT single completable item)
  * 
  * USES:
- * - id, type='checklist', title, collection_id, sort_order
+ * - id, type='checklist', title, collection_id
  * - created_at, updated_at, deleted_at
  * 
  * DOES NOT USE:
@@ -119,7 +116,6 @@ export interface Checklist extends BaseModel {
   type: 'checklist';
   title: string;
   collection_id?: string;
-  sort_order: number;
 }
 
 /**

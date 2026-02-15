@@ -1,5 +1,5 @@
 import * as SQLite from 'expo-sqlite';
-import { INIT_SCHEMA, SCHEMA_VERSION, MIGRATE_V1_TO_V2, MIGRATE_V2_TO_V3, MIGRATE_V3_TO_V4, MIGRATE_V4_TO_V5, MIGRATE_V5_TO_V6 } from './schema';
+import { INIT_SCHEMA, SCHEMA_VERSION, MIGRATE_V1_TO_V2, MIGRATE_V2_TO_V3, MIGRATE_V3_TO_V4, MIGRATE_V4_TO_V5 } from './schema';
 
 let dbInstance: SQLite.SQLiteDatabase | null = null;
 
@@ -273,60 +273,6 @@ async function migrateV4ToV5(db: SQLite.SQLiteDatabase): Promise<void> {
 }
 
 /**
- * Run migration from version 5 to version 6
- * Add sort_order column to entries table
- * 
- * TICKET: 16 - Drag & Drop Entry Reordering
- * 
- * CHANGES:
- * 1. Adds sort_order column to entries table
- * 2. Initializes sort_order for existing entries
- * 3. Creates index for efficient sorting
- * 
- * SAFETY GUARANTEES:
- * - Runs in transaction (automatic rollback on error)
- * - Verifies column was added
- * - Verifies all entries have sort_order >= 0
- * - Idempotent (safe to run multiple times)
- */
-async function migrateV5ToV6(db: SQLite.SQLiteDatabase): Promise<void> {
-  console.log('Running migration: V5 → V6 (Add sort_order to entries)');
-  
-  try {
-    await db.execAsync('BEGIN TRANSACTION;');
-    
-    // Run migration SQL
-    await db.execAsync(MIGRATE_V5_TO_V6);
-    
-    // Verify column was added
-    const columnCheck = await db.getFirstAsync<{ count: number }>(
-      "SELECT COUNT(*) as count FROM pragma_table_info('entries') WHERE name='sort_order'"
-    );
-    
-    if (!columnCheck || columnCheck.count === 0) {
-      throw new Error('Migration verification failed: sort_order column not added');
-    }
-    
-    // Verify all active entries have valid sort_order
-    const entriesCheck = await db.getFirstAsync<{ count: number }>(
-      'SELECT COUNT(*) as count FROM entries WHERE deleted_at IS NULL AND sort_order < 0'
-    );
-    
-    if (entriesCheck && entriesCheck.count > 0) {
-      throw new Error('Migration verification failed: some entries have invalid sort_order');
-    }
-    
-    console.log('Migration V5→V6 successful: sort_order column added to entries');
-    
-    await db.execAsync('COMMIT;');
-  } catch (error) {
-    await db.execAsync('ROLLBACK;');
-    console.error('Migration V5→V6 failed:', error);
-    throw error;
-  }
-}
-
-/**
  * Initialize SQLite database with schema
  * Creates all tables and indexes, runs migrations if needed
  */
@@ -383,10 +329,6 @@ export async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
       
       if (currentVersion < 5) {
         await migrateV4ToV5(db);
-      }
-      
-      if (currentVersion < 6) {
-        await migrateV5ToV6(db);
       }
       
       await updateVersion(db, SCHEMA_VERSION);

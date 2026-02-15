@@ -1,11 +1,6 @@
 /**
  * SQLite schema definitions for Tetradio
  * 
- * VERSION 6 CHANGES (Ticket 16 - Drag & Drop Entry Reordering):
- * - Added sort_order column to entries table
- * - New entries inserted at top (sort_order = 0, shift others down)
- * - Entries now ordered by sort_order ASC, created_at DESC
- * 
  * VERSION 5 CHANGES (Ticket 14 - Lists → Collections Rename):
  * - Renamed lists → collections
  * - Renamed list_id → collection_id in entries table
@@ -36,7 +31,7 @@
  * - No AI fields in main schema (separate intelligence tables for future)
  */
 
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 5;
 
 /**
  * Entries Table (formerly Tasks)
@@ -80,7 +75,6 @@ export const CREATE_ENTRIES_TABLE = `
     collection_id TEXT,
     parent_task_id TEXT,
     snoozed_until INTEGER,
-    sort_order INTEGER DEFAULT 0 NOT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     deleted_at INTEGER,
@@ -94,7 +88,6 @@ export const CREATE_ENTRIES_INDEXES = `
   CREATE INDEX IF NOT EXISTS idx_entries_type ON entries(type) WHERE deleted_at IS NULL;
   CREATE INDEX IF NOT EXISTS idx_entries_due_date ON entries(due_date) WHERE deleted_at IS NULL AND completed = 0;
   CREATE INDEX IF NOT EXISTS idx_entries_completed ON entries(completed, completed_at) WHERE deleted_at IS NULL;
-  CREATE INDEX IF NOT EXISTS idx_entries_sort_order ON entries(collection_id, sort_order) WHERE deleted_at IS NULL;
 `;
 
 /**
@@ -424,52 +417,4 @@ export const MIGRATE_V4_TO_V5 = `
   CREATE INDEX IF NOT EXISTS idx_collections_system ON collections(is_system) WHERE deleted_at IS NULL;
   CREATE INDEX IF NOT EXISTS idx_collection_items_collection ON collection_items(collection_id, position) WHERE deleted_at IS NULL;
   CREATE INDEX IF NOT EXISTS idx_entries_collection ON entries(collection_id) WHERE deleted_at IS NULL;
-`;
-
-/**
- * Migration from Schema Version 5 to Version 6
- * Add sort_order column to entries table
- * 
- * TICKET: 16 - Drag & Drop Entry Reordering
- * 
- * CHANGES:
- * 1. Adds sort_order column (INTEGER DEFAULT 0 NOT NULL)
- * 2. Initializes sort_order for existing entries (preserves visual order)
- * 3. Creates index for efficient sorting queries
- * 
- * PRESERVES:
- * - All existing data unchanged
- * - Visual order preserved (newest = 0, oldest = highest)
- * - All existing columns unchanged
- * 
- * INITIALIZATION STRATEGY:
- * - Existing entries: sort_order assigned based on created_at (preserves current order)
- * - New entries: always inserted at top (sort_order = 0, shift others down)
- * - Dragging: updates sort_order, overrides created_at ordering
- * 
- * VERIFICATION:
- * - All entries have sort_order >= 0 after migration
- * - ORDER BY sort_order ASC matches current ORDER BY created_at DESC visually
- */
-export const MIGRATE_V5_TO_V6 = `
-  -- Add sort_order column to entries table
-  ALTER TABLE entries ADD COLUMN sort_order INTEGER DEFAULT 0 NOT NULL;
-  
-  -- Initialize sort_order for existing entries per collection
-  -- Strategy: Assign based on created_at (newest = 0, oldest = highest)
-  -- This preserves current visual ordering (newest at top)
-  UPDATE entries
-  SET sort_order = (
-    SELECT COUNT(*)
-    FROM entries AS e2
-    WHERE (e2.collection_id = entries.collection_id OR (e2.collection_id IS NULL AND entries.collection_id IS NULL))
-      AND e2.deleted_at IS NULL
-      AND e2.created_at > entries.created_at
-  )
-  WHERE deleted_at IS NULL;
-  
-  -- Create index for efficient sorting
-  CREATE INDEX IF NOT EXISTS idx_entries_sort_order 
-    ON entries(collection_id, sort_order) 
-    WHERE deleted_at IS NULL;
 `;

@@ -10,76 +10,18 @@ export interface TaskWithCollectionName extends Task {
   collection_name?: string;
 }
 
-// ========== SORT ORDER HELPERS (TICKET 16) ==========
-
-/**
- * Shift existing entries down when inserting new entry at top
- * Increments sort_order for all entries in collection
- * 
- * TICKET 16: Drag & Drop Entry Reordering
- */
-async function shiftEntriesDown(db: any, collectionId: string | null | undefined): Promise<void> {
-  if (collectionId) {
-    await db.runAsync(
-      `UPDATE entries 
-       SET sort_order = sort_order + 1, updated_at = datetime('now')
-       WHERE collection_id = ? AND deleted_at IS NULL`,
-      [collectionId]
-    );
-  } else {
-    await db.runAsync(
-      `UPDATE entries 
-       SET sort_order = sort_order + 1, updated_at = datetime('now')
-       WHERE collection_id IS NULL AND deleted_at IS NULL`
-    );
-  }
-}
-
-/**
- * Update sort_order for multiple entries atomically
- * Used after drag & drop to persist new order
- * 
- * TICKET 16: Drag & Drop Entry Reordering
- */
-export async function updateEntrySortOrders(
-  updates: { id: string; sort_order: number }[]
-): Promise<void> {
-  const db = await getDatabase();
-  
-  await db.execAsync('BEGIN TRANSACTION;');
-  
-  try {
-    for (const { id, sort_order } of updates) {
-      await db.runAsync(
-        `UPDATE entries 
-         SET sort_order = ?, updated_at = datetime('now')
-         WHERE id = ?`,
-        [sort_order, id]
-      );
-    }
-    
-    await db.execAsync('COMMIT;');
-  } catch (error) {
-    await db.execAsync('ROLLBACK;');
-    throw error;
-  }
-}
-
-// ========== TASK OPERATIONS ==========
-
 /**
  * Get all tasks for a specific list
- * Returns tasks sorted by: completed status → sort_order → created date
+ * Returns tasks sorted by: completed status → priority → created date
  * 
  * VERSION 2: Updated to query entries table with type filter
- * VERSION 6 (TICKET 16): Updated to order by sort_order
  */
 export async function getTasksByCollectionId(collectionId: string): Promise<Task[]> {
   const db = await getDatabase();
   const rows = await db.getAllAsync<any>(
     `SELECT * FROM entries 
      WHERE collection_id = ? AND type = 'task' AND deleted_at IS NULL 
-     ORDER BY completed ASC, sort_order ASC, created_at DESC`,
+     ORDER BY completed ASC, calm_priority ASC, created_at DESC`,
     [collectionId]
   );
   
@@ -95,7 +37,6 @@ export async function getTasksByCollectionId(collectionId: string): Promise<Task
     collection_id: row.collection_id,
     parent_task_id: row.parent_task_id,
     snoozed_until: row.snoozed_until,
-    sort_order: row.sort_order,
     created_at: row.created_at,
     updated_at: row.updated_at,
     deleted_at: row.deleted_at,
@@ -311,9 +252,6 @@ export async function createTask(input: {
 }): Promise<void> {
   const db = await getDatabase();
 
-  // Shift existing entries down (new entry goes to top)
-  await shiftEntriesDown(db, input.collection_id);
-
   await db.runAsync(
     `INSERT INTO entries (
       id,
@@ -323,10 +261,9 @@ export async function createTask(input: {
       due_date,
       calm_priority,
       completed,
-      sort_order,
       created_at,
       updated_at
-    ) VALUES (?, 'task', ?, ?, ?, ?, 0, 0, datetime('now'), datetime('now'))`,
+    ) VALUES (?, 'task', ?, ?, ?, ?, 0, datetime('now'), datetime('now'))`,
     [
       Crypto.randomUUID(),
       input.title,
@@ -428,7 +365,7 @@ export async function getAllActiveTasks(): Promise<TaskWithCollectionName[]> {
      FROM entries t
      LEFT JOIN collections l ON t.collection_id = l.id
      WHERE t.type = 'task' AND t.deleted_at IS NULL
-     ORDER BY t.completed ASC, t.sort_order ASC, t.created_at DESC`
+     ORDER BY t.completed ASC, t.created_at DESC`
   );
   
   return rows.map(row => ({
@@ -443,7 +380,6 @@ export async function getAllActiveTasks(): Promise<TaskWithCollectionName[]> {
     collection_id: row.collection_id,
     parent_task_id: row.parent_task_id,
     snoozed_until: row.snoozed_until,
-    sort_order: row.sort_order,
     created_at: row.created_at,
     updated_at: row.updated_at,
     deleted_at: row.deleted_at,
@@ -461,9 +397,6 @@ export async function getAllActiveTasks(): Promise<TaskWithCollectionName[]> {
 export async function createNote(input: CreateNote): Promise<void> {
   const db = await getDatabase();
 
-  // Shift existing entries down (new entry goes to top)
-  await shiftEntriesDown(db, input.collection_id);
-
   await db.runAsync(
     `INSERT INTO entries (
       id,
@@ -471,10 +404,9 @@ export async function createNote(input: CreateNote): Promise<void> {
       title,
       notes,
       collection_id,
-      sort_order,
       created_at,
       updated_at
-    ) VALUES (?, 'note', ?, ?, ?, 0, datetime('now'), datetime('now'))`,
+    ) VALUES (?, 'note', ?, ?, ?, datetime('now'), datetime('now'))`,
     [
       Crypto.randomUUID(),
       input.title,
@@ -541,7 +473,7 @@ export async function getNotesByCollectionId(collectionId: string): Promise<Note
   const rows = await db.getAllAsync<any>(
     `SELECT * FROM entries 
      WHERE collection_id = ? AND type = 'note' AND deleted_at IS NULL 
-     ORDER BY sort_order ASC, created_at DESC`,
+     ORDER BY created_at DESC`,
     [collectionId]
   );
   
@@ -551,7 +483,6 @@ export async function getNotesByCollectionId(collectionId: string): Promise<Note
     title: row.title,
     notes: row.notes,
     collection_id: row.collection_id,
-    sort_order: row.sort_order,
     created_at: row.created_at,
     updated_at: row.updated_at,
     deleted_at: row.deleted_at,
@@ -584,24 +515,20 @@ export async function createChecklistWithItems(input: {
   await db.execAsync('BEGIN TRANSACTION;');
 
   try {
-    // 1. Shift existing entries down (new entry goes to top)
-    await shiftEntriesDown(db, input.collection_id);
-    
-    // 2. Create checklist entry
+    // 1. Create checklist entry
     await db.runAsync(
       `INSERT INTO entries (
         id,
         type,
         title,
         collection_id,
-        sort_order,
         created_at,
         updated_at
-      ) VALUES (?, 'checklist', ?, ?, 0, datetime('now'), datetime('now'))`,
+      ) VALUES (?, 'checklist', ?, ?, datetime('now'), datetime('now'))`,
       [checklistId, input.title, input.collection_id ?? null]
     );
 
-    // 3. Create all checklist items
+    // 2. Create all checklist items
     for (const itemTitle of input.items) {
       if (itemTitle.trim()) {  // Skip empty items
         await db.runAsync(
@@ -739,7 +666,7 @@ export async function getChecklistsByCollectionId(collectionId: string): Promise
      LEFT JOIN checklist_items ci ON e.id = ci.checklist_id AND ci.deleted_at IS NULL
      WHERE e.collection_id = ? AND e.type = 'checklist' AND e.deleted_at IS NULL
      GROUP BY e.id
-     ORDER BY e.sort_order ASC, e.created_at DESC`,
+     ORDER BY e.created_at DESC`,
     [collectionId]
   );
   
@@ -748,7 +675,6 @@ export async function getChecklistsByCollectionId(collectionId: string): Promise
     type: 'checklist' as const,
     title: row.title,
     collection_id: row.collection_id,
-    sort_order: row.sort_order,
     created_at: row.created_at,
     updated_at: row.updated_at,
     deleted_at: row.deleted_at,
@@ -776,7 +702,6 @@ export async function getChecklist(checklistId: string): Promise<Checklist | nul
     type: 'checklist' as const,
     title: row.title,
     collection_id: row.collection_id,
-    sort_order: row.sort_order,
     created_at: row.created_at,
     updated_at: row.updated_at,
     deleted_at: row.deleted_at,
@@ -1131,34 +1056,31 @@ export async function cleanupUnsortedCollectionIfEmpty(): Promise<void> {
  */
 export async function moveEntryToCollection(input: {
   entryId: string;
-  newCollectionId: string;
-  sourceCollectionId?: string;
+  newListId: string;
+  sourceListId?: string;
 }): Promise<void> {
   const db = await getDatabase();
   const now = Date.now();
   
   try {
-    // TICKET 16: Shift existing entries down in target collection
-    await shiftEntriesDown(db, input.newCollectionId);
-    
-    // Update the entry's collection_id and reset sort_order to 0 (top)
+    // Update the entry's collection_id
     await db.runAsync(
       `UPDATE entries 
-       SET collection_id = ?, sort_order = 0, updated_at = ? 
+       SET collection_id = ?, updated_at = ? 
        WHERE id = ? AND deleted_at IS NULL`,
-      [input.newCollectionId, now, input.entryId]
+      [input.newListId, now, input.entryId]
     );
     
-    console.log(`📦 Moved entry ${input.entryId} to collection ${input.newCollectionId}`);
+    console.log(`📦 Moved entry ${input.entryId} to list ${input.newListId}`);
     
     // If source was Unsorted, check if it needs cleanup
-    if (input.sourceCollectionId) {
-      const sourceCollection = await db.getFirstAsync<{ is_system: number }>(
+    if (input.sourceListId) {
+      const sourceList = await db.getFirstAsync<{ is_system: number }>(
         'SELECT is_system FROM collections WHERE id = ? AND deleted_at IS NULL',
-        [input.sourceCollectionId]
+        [input.sourceListId]
       );
       
-      if (sourceCollection && sourceCollection.is_system === 1) {
+      if (sourceList && sourceList.is_system === 1) {
         console.log('🔍 Source was Unsorted, checking cleanup...');
         await cleanupUnsortedCollectionIfEmpty();
       }

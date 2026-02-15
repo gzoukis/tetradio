@@ -18,6 +18,7 @@ import type { TaskWithCollectionName } from '../db/operations';
 import type { Collection } from '../types/models';
 import { groupTasksByTime } from '../utils/timeClassification';
 import { getPriorityLabel } from '../utils/formatting';
+import type { TaskFilter } from '../types/filters';
 
 type QuickCreateMode = 'entry' | 'new-collection';
 
@@ -25,7 +26,7 @@ export default function OverviewScreen({
   onViewTasks,
   goToCollections,
 }: {
-  onViewTasks: () => void;
+  onViewTasks: (filter?: TaskFilter) => void;
   goToCollections: (collectionId?: string) => void;
 }) {
   const [tasks, setTasks] = useState<TaskWithCollectionName[]>([]);
@@ -229,12 +230,17 @@ export default function OverviewScreen({
         {/* Overdue */}
         {grouped.overdue.length > 0 && (
           <View style={[styles.section, styles.sectionOverdue]}>
-            <Text style={styles.sectionTitle}>
-              ⚠️ Overdue ({grouped.overdue.length})
-            </Text>
+            <TouchableOpacity 
+              onPress={() => onViewTasks('overdue')}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.sectionTitle}>
+                ⚠️ Overdue ({grouped.overdue.length})
+              </Text>
+            </TouchableOpacity>
             {grouped.overdue.slice(0, 3).map(renderTaskPreview)}
             {grouped.overdue.length > 3 && (
-              <TouchableOpacity style={styles.viewAllButton} onPress={onViewTasks}>
+              <TouchableOpacity style={styles.viewAllButton} onPress={() => onViewTasks('overdue')}>
                 <Text style={styles.viewAllText}>
                   View all {grouped.overdue.length} overdue â†’
                 </Text>
@@ -246,12 +252,17 @@ export default function OverviewScreen({
         {/* Today */}
         {grouped.today.length > 0 ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              Today ({grouped.today.length})
-            </Text>
+            <TouchableOpacity 
+              onPress={() => onViewTasks('today')}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.sectionTitle}>
+                Today ({grouped.today.length})
+              </Text>
+            </TouchableOpacity>
             {grouped.today.slice(0, 5).map(renderTaskPreview)}
             {grouped.today.length > 5 && (
-              <TouchableOpacity style={styles.viewAllButton} onPress={onViewTasks}>
+              <TouchableOpacity style={styles.viewAllButton} onPress={() => onViewTasks('today')}>
                 <Text style={styles.viewAllText}>
                   View all {grouped.today.length} tasks â†’
                 </Text>
@@ -268,12 +279,17 @@ export default function OverviewScreen({
         {/* Upcoming */}
         {grouped.upcoming.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              Upcoming ({grouped.upcoming.length})
-            </Text>
+            <TouchableOpacity 
+              onPress={() => onViewTasks('upcoming')}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.sectionTitle}>
+                Upcoming ({grouped.upcoming.length})
+              </Text>
+            </TouchableOpacity>
             {grouped.upcoming.slice(0, 3).map(renderTaskPreview)}
             {grouped.upcoming.length > 3 && (
-              <TouchableOpacity style={styles.viewAllButton} onPress={onViewTasks}>
+              <TouchableOpacity style={styles.viewAllButton} onPress={() => onViewTasks('upcoming')}>
                 <Text style={styles.viewAllText}>View all upcoming â†’</Text>
               </TouchableOpacity>
             )}
@@ -284,21 +300,29 @@ export default function OverviewScreen({
 
         {/* Hints */}
         {grouped.no_date.length > 0 && (
-          <View style={styles.hintSection}>
+          <TouchableOpacity 
+            style={styles.hintSection}
+            onPress={() => onViewTasks('no-date')}
+            activeOpacity={0.7}
+          >
             <Text style={styles.hintText}>
               📋 {grouped.no_date.length} task
               {grouped.no_date.length === 1 ? '' : 's'} without a due date
             </Text>
-          </View>
+          </TouchableOpacity>
         )}
 
         {grouped.completed.length > 0 && (
-          <View style={styles.hintSection}>
+          <TouchableOpacity 
+            style={styles.hintSection}
+            onPress={() => onViewTasks('completed')}
+            activeOpacity={0.7}
+          >
             <Text style={styles.hintText}>
               ✓ {grouped.completed.length} completed task
               {grouped.completed.length === 1 ? '' : 's'}
             </Text>
-          </View>
+          </TouchableOpacity>
         )}
 
 

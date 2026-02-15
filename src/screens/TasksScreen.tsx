@@ -1,6 +1,6 @@
 import DatePickerButton from '../components/DatePickerButton';
 import SelectionMenu, { SelectionOption } from '../components/SelectionMenu';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,8 @@ import { getAllActiveTasks, updateTask, deleteTask, getCollectionByName, getActi
 import type { TaskWithCollectionName } from '../db/operations';
 import { groupTasksByTime } from '../utils/timeClassification';
 import { getPriorityStyle } from '../utils/formatting';
+import type { TaskFilter } from '../types/filters';
+import { applyTaskFilter, getFilterLabel } from '../utils/taskFilters';
 
 interface TaskSection {
   title: string;
@@ -23,54 +25,130 @@ interface TaskSection {
   collapsed?: boolean;
 }
 
-export default function TasksScreen({ goToCollections }: { goToCollections: () => void }) {
+export default function TasksScreen({ 
+  initialFilter = 'all',
+  onFilterChange,
+  goToCollections 
+}: { 
+  initialFilter?: TaskFilter;
+  onFilterChange?: (filter: TaskFilter) => void;
+  goToCollections: () => void;
+}) {
   const [sections, setSections] = useState<TaskSection[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [completedCollapsed, setCompletedCollapsed] = useState(true);
   const [priorityMenuVisible, setPriorityMenuVisible] = useState(false);
   const [selectedTaskForPriority, setSelectedTaskForPriority] = useState<TaskWithCollectionName | null>(null);
+  
+  // TICKET 17A: Centralized filter state
+  // Controls which subset of tasks is visible (all, today, overdue, etc.)
+  const [activeFilter, setActiveFilter] = useState<TaskFilter>(initialFilter);
+  
+  // TICKET 17A HARDENING: Store all tasks for in-memory filtering
+  // Load once from DB, filter locally via useMemo
+  const [allTasks, setAllTasks] = useState<TaskWithCollectionName[]>([]);
+
+  // TICKET 17A HARDENING: Memoized filtering
+  // Filter happens in-memory, instant switching, no DB re-queries
+  // CRITICAL: We filter active tasks only, completed tasks handled separately
+  // EXCEPT when filter='completed', then we show only completed
+  const visibleActiveTasks = useMemo(() => {
+    if (activeFilter === 'completed') {
+      // Special case: when filtering to completed, return empty
+      // (completed tasks handled separately below)
+      return [];
+    }
+    const activeTasks = allTasks.filter(t => !t.completed);
+    return applyTaskFilter(activeTasks, activeFilter);
+  }, [allTasks, activeFilter]);
+
+  // TICKET 17A HARDENING: Get completed tasks separately
+  // When filter='completed', show them; otherwise available for 'all' filter
+  const completedTasks = useMemo(() => {
+    return allTasks.filter(t => t.completed);
+  }, [allTasks]);
+
+  // TICKET 17A HARDENING: Memoized grouping
+  // Only recompute sections when visible tasks change
+  const groupedTasks = useMemo(() => {
+    const grouped = groupTasksByTime(visibleActiveTasks);
+    // Add completed tasks back (they're UI-controlled, not filter-controlled)
+    grouped.completed = completedTasks;
+    return grouped;
+  }, [visibleActiveTasks, completedTasks]);
+
+  // TICKET 17A: Sync activeFilter when initialFilter prop changes (deep linking)
+  useEffect(() => {
+    setActiveFilter(initialFilter);
+  }, [initialFilter]);
+
+  // TICKET 17A BUG FIX: Notify parent when filter changes
+  // This ensures filter state persists across tab switches
+  useEffect(() => {
+    if (onFilterChange) {
+      onFilterChange(activeFilter);
+    }
+  }, [activeFilter, onFilterChange]);
 
   useEffect(() => {
     loadTasks();
   }, []);
 
+  // TICKET 17A HARDENING: Update sections when grouped tasks or collapsed state changes
   useEffect(() => {
-    // Reload tasks when completedCollapsed changes to update section data
-    if (!loading) {
-      loadTasks();
+    if (groupedTasks) {
+      const newSections: TaskSection[] = [];
+
+      // TICKET 17A FINAL: Special handling for 'completed' filter
+      // When filtering to completed, show ONLY completed section (hide others)
+      if (activeFilter === 'completed') {
+        if (groupedTasks.completed.length) {
+          newSections.push({
+            title: `COMPLETED (${groupedTasks.completed.length})`,
+            data: groupedTasks.completed, // Always expanded when filtered
+            collapsed: false,
+          });
+        }
+      } else {
+        // Normal filtering: show time-based sections
+        if (groupedTasks.overdue.length) {
+          newSections.push({ title: 'OVERDUE', data: groupedTasks.overdue });
+        }
+        if (groupedTasks.today.length) {
+          newSections.push({ title: 'TODAY', data: groupedTasks.today });
+        }
+        if (groupedTasks.upcoming.length) {
+          newSections.push({ title: 'UPCOMING', data: groupedTasks.upcoming });
+        }
+        if (groupedTasks.no_date.length) {
+          newSections.push({ title: 'NO DATE', data: groupedTasks.no_date });
+        }
+        
+        // TICKET 17A BUG FIX: Only show completed section when filter is 'all'
+        // In filtered views (today, overdue, etc.), hide completed tasks
+        if (activeFilter === 'all' && groupedTasks.completed.length) {
+          newSections.push({
+            title: `COMPLETED (${groupedTasks.completed.length})`,
+            data: completedCollapsed ? [] : groupedTasks.completed,
+            collapsed: completedCollapsed,
+          });
+        }
+      }
+
+      setSections(newSections);
     }
-  }, [completedCollapsed]);
+  }, [groupedTasks, completedCollapsed, activeFilter]);
 
   const loadTasks = async () => {
     try {
       setLoading(true);
-      const allTasks = await getAllActiveTasks();
-      const grouped = groupTasksByTime(allTasks);
-
-      const newSections: TaskSection[] = [];
-
-      if (grouped.overdue.length) {
-        newSections.push({ title: 'OVERDUE', data: grouped.overdue });
-      }
-      if (grouped.today.length) {
-        newSections.push({ title: 'TODAY', data: grouped.today });
-      }
-      if (grouped.upcoming.length) {
-        newSections.push({ title: 'UPCOMING', data: grouped.upcoming });
-      }
-      if (grouped.no_date.length) {
-        newSections.push({ title: 'NO DATE', data: grouped.no_date });
-      }
-      if (grouped.completed.length) {
-        newSections.push({
-          title: `COMPLETED (${grouped.completed.length})`,
-          data: completedCollapsed ? [] : grouped.completed,
-          collapsed: completedCollapsed,
-        });
-      }
-
-      setSections(newSections);
+      
+      // TICKET 17A HARDENING: Load all tasks once, store unfiltered
+      // Filtering happens via useMemo, not here
+      const tasks = await getAllActiveTasks();
+      setAllTasks(tasks);
+      
     } catch (error) {
       Alert.alert('Error', 'Unable to load items. Please try again.');
     } finally {
@@ -339,6 +417,24 @@ export default function TasksScreen({ goToCollections }: { goToCollections: () =
 
   return (
     <View style={styles.container}>
+      {/* TICKET 17A: Filter indicator - show when not on 'all' */}
+      {activeFilter !== 'all' && (
+        <View style={styles.filterBanner}>
+          <View style={styles.filterBannerContent}>
+            <Text style={styles.filterBannerText}>
+              Filtered: {getFilterLabel(activeFilter)}
+            </Text>
+            <TouchableOpacity 
+              style={styles.clearFilterButton}
+              onPress={() => setActiveFilter('all')}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.clearFilterText}>Show All</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       <SectionList
         sections={sections}
         renderItem={renderTask}
@@ -413,6 +509,37 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f9fafb' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingText: { fontSize: 16, color: '#666' },
+  
+  // TICKET 17A: Filter indicator banner
+  filterBanner: {
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2563eb',
+  },
+  filterBannerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  filterBannerText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#ffffff',
+  },
+  clearFilterButton: {
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  clearFilterText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#3b82f6',
+  },
+  
   taskList: { padding: 16, paddingBottom: 100 },
   sectionHeader: {
     flexDirection: 'row',

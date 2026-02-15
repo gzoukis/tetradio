@@ -1,5 +1,4 @@
 import DatePickerButton from '../components/DatePickerButton';
-import NoteCard from '../components/NoteCard';
 import NoteEditor from '../components/NoteEditor';
 import ChecklistScreen from './ChecklistScreen';
 import ActionMenu, { ActionMenuItem } from '../components/ActionMenu';
@@ -25,7 +24,7 @@ import {
   ScrollView,
 } from 'react-native';
 import DraggableFlatList, { RenderItemParams, ScaleDecorator } from 'react-native-draggable-flatlist';
-import { getAllCollections, createCollection, deleteCollection, getActiveEntriesCountByCollectionId, archiveCollection, moveEntryToCollection, toggleCollectionPin, updateCollectionSortOrders, renameCollection } from '../db/operations';
+import { getAllCollections, createCollection, deleteCollection, getActiveEntriesCountByCollectionId, archiveCollection, moveEntryToCollection, toggleCollectionPin, updateCollectionSortOrders, renameCollection, updateEntrySortOrders } from '../db/operations';
 import { getTasksByCollectionId, createTask, deleteTask, updateTask } from '../db/operations';
 import { getNotesByCollectionId, createNote, deleteNote, updateNote } from '../db/operations';
 import { getChecklistsByCollectionId, createChecklist, createChecklistWithItems, deleteChecklist } from '../db/operations';
@@ -415,8 +414,10 @@ export default function CollectionsScreen({
         getChecklistsByCollectionId(collectionId),
       ]);
 
+      // CRITICAL: Merge all entry types and sort by sort_order
+      // Without this, tasks always appear first, then notes, then checklists
       const mixed: CollectionEntry[] = [...tasks, ...notes, ...checklists].sort(
-        (a, b) => b.created_at - a.created_at
+        (a, b) => a.sort_order - b.sort_order
       );
 
       setEntries(mixed);
@@ -425,6 +426,41 @@ export default function CollectionsScreen({
       Alert.alert('Error', 'Unable to load items. Please try again.');
     } finally {
       setLoadingEntries(false);
+    }
+  };
+
+  // TICKET 16: Drag & drop handler for entries
+  const handleEntriesDragEnd = async ({ data, from, to }: { 
+    data: CollectionEntry[]; 
+    from: number; 
+    to: number 
+  }) => {
+    // No change if dropped in same position
+    if (from === to) {
+      return;
+    }
+    
+    // Optimistically update UI
+    setEntries(data);
+    
+    try {
+      // Prepare batch update: assign new sort_order based on position
+      const updates = data.map((entry, index) => ({
+        id: entry.id,
+        sort_order: index,
+      }));
+      
+      // Persist to database
+      await updateEntrySortOrders(updates);
+      
+    } catch (error) {
+      console.error('❌ Failed to persist entry drag order:', error);
+      Alert.alert('Error', 'Unable to save new order. Changes reverted.');
+      
+      // Revert to original order
+      if (selectedCollection) {
+        await loadEntries(selectedCollection.id);
+      }
     }
   };
 
@@ -998,38 +1034,84 @@ export default function CollectionsScreen({
     );
   };
 
-  const renderEntry = ({ item }: { item: CollectionEntry }) => {
+  const renderEntry = ({ 
+    item, 
+    drag, 
+    isActive 
+  }: { 
+    item: CollectionEntry; 
+    drag?: () => void; 
+    isActive?: boolean;
+  }) => {
     if (item.type === 'note') {
+      const note = item;
       return (
-        <NoteCard
-          note={item}
-          onPress={() => setEditingNote(item)}
-          onLongPress={() => handleNoteLongPress(item)}
-        />
+        <View style={styles.entryWithMenu}>
+          <TouchableOpacity
+            onPress={() => !isActive && setEditingNote(note)}
+            onLongPress={drag}
+            disabled={isActive}
+            delayLongPress={200}
+            activeOpacity={0.7}
+            style={[styles.noteCard, { flex: 1 }]}
+          >
+            <View style={styles.noteHeader}>
+              <View style={styles.noteBadge}>
+                <Text style={styles.noteBadgeText}>NOTE</Text>
+              </View>
+              <Text style={styles.noteTitle}>{note.title}</Text>
+            </View>
+            {note.notes && (
+              <Text style={styles.noteBody} numberOfLines={3}>
+                {note.notes}
+              </Text>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.entryMenuButton}
+            onPress={() => handleNoteLongPress(note)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.entryMenuIcon}>•••</Text>
+          </TouchableOpacity>
+        </View>
       );
     }
     
     if (item.type === 'checklist') {
       const checklist = item;
       return (
-        <TouchableOpacity
-          style={styles.checkcollectionRow}
-          onPress={() => setSelectedChecklist(checklist)}
-          onLongPress={() => handleChecklistLongPress(checklist)}
-          activeOpacity={0.7}
-          delayLongPress={VALIDATION.DELAYS.LONG_PRESS_MENU}
-        >
-          <View style={styles.checkcollectionIcon}>
-            <Text style={styles.checkcollectionIconText}>☑️</Text>
-          </View>
-          <View style={styles.checkcollectionContent}>
-            <Text style={styles.checkcollectionTitle}>{checklist.title}</Text>
-            <Text style={styles.checklistStats}>
-              {checklist.checked_count} / {checklist.total_count} completed
-            </Text>
-          </View>
-          <Text style={styles.chevron}>›</Text>
-        </TouchableOpacity>
+        <View style={styles.entryWithMenu}>
+          <TouchableOpacity
+            style={[
+              styles.checkcollectionRow, 
+              { flex: 1 },
+              isActive && styles.entryDragging  // ← Apply shading when active
+            ]}
+            onPress={() => setSelectedChecklist(checklist)}
+            onLongPress={drag}
+            disabled={isActive}
+            delayLongPress={200}
+            activeOpacity={0.7}
+          >
+            <View style={styles.checkcollectionIcon}>
+              <Text style={styles.checkcollectionIconText}>☑️</Text>
+            </View>
+            <View style={styles.checkcollectionContent}>
+              <Text style={styles.checkcollectionTitle}>{checklist.title}</Text>
+              <Text style={styles.checklistStats}>
+                {checklist.checked_count} / {checklist.total_count} completed
+              </Text>
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.entryMenuButton}
+            onPress={() => handleChecklistLongPress(checklist)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.entryMenuIcon}>•••</Text>
+          </TouchableOpacity>
+        </View>
       );
     }
 
@@ -1054,53 +1136,83 @@ export default function CollectionsScreen({
     };
 
     return (
-      <View style={[styles.taskRow, priorityStyle]}>
+      <View style={styles.entryWithMenu}>
+        <View style={[
+          styles.taskRow, 
+          priorityStyle, 
+          { flex: 1 },
+          isActive && styles.entryDragging  // ← Apply shading to taskRow
+        ]}>
+          {/* Checkbox */}
+          <TouchableOpacity
+            style={[styles.checkbox, task.completed && styles.checkboxChecked]}
+            onPress={() => {
+              if (!isEditing) {
+                handleToggleTask(task);
+              }
+            }}
+            activeOpacity={0.7}
+          >
+            {task.completed && <Text style={styles.checkmark}>✓</Text>}
+          </TouchableOpacity>
+
+          {/* Task content - constrained to left ~50% */}
+          <View style={[styles.taskContent, { maxWidth: '50%' }]}>
+            {isEditing ? (
+              <TextInput
+                ref={entryEditInputRef}
+                style={styles.taskEditInput}
+                value={editingEntryTitle}
+                onChangeText={setEditingEntryTitle}
+                onBlur={() => handleSaveEditEntry(task)}
+                onSubmitEditing={() => handleSaveEditEntry(task)}
+                autoFocus
+                returnKeyType="done"
+              />
+            ) : (
+              <TouchableOpacity
+                onPress={() => handleStartEditEntry(task)}
+                activeOpacity={0.7}
+                style={{ alignSelf: 'flex-start' }}
+              >
+                <Text style={[styles.taskTitle, task.completed && styles.taskTitleCompleted]}>
+                  {task.title}
+                </Text>
+                {task.notes && <Text style={styles.taskNotes}>{task.notes}</Text>}
+              </TouchableOpacity>
+            )}
+
+            {!task.completed && (
+              <View style={{ alignSelf: 'flex-start' }}>
+                <DatePickerButton
+                  value={task.due_date}
+                  onChange={handleDateChange}
+                  disabled={isEditing}
+                />
+              </View>
+            )}
+          </View>
+          
+          {/* Drag zone - right ~40% empty space for long-press */}
+          <TouchableOpacity
+            style={styles.taskDragZone}
+            onLongPress={drag}
+            disabled={isActive}
+            delayLongPress={200}
+            activeOpacity={1}
+          >
+            {/* Empty space for dragging */}
+          </TouchableOpacity>
+        </View>
+        
+        {/* Menu button */}
         <TouchableOpacity
-          style={[styles.checkbox, task.completed && styles.checkboxChecked]}
-          onPress={() => {
-            if (!isEditing) {
-              handleToggleTask(task);
-            }
-          }}
+          style={styles.entryMenuButton}
+          onPress={() => handleTaskLongPress(task)}
           activeOpacity={0.7}
         >
-          {task.completed && <Text style={styles.checkmark}>✓</Text>}
+          <Text style={styles.entryMenuIcon}>•••</Text>
         </TouchableOpacity>
-
-        <View style={styles.taskContent}>
-          {isEditing ? (
-            <TextInput
-              ref={entryEditInputRef}
-              style={styles.taskEditInput}
-              value={editingEntryTitle}
-              onChangeText={setEditingEntryTitle}
-              onBlur={() => handleSaveEditEntry(task)}
-              onSubmitEditing={() => handleSaveEditEntry(task)}
-              autoFocus
-              returnKeyType="done"
-            />
-          ) : (
-            <TouchableOpacity
-              onPress={() => handleStartEditEntry(task)}
-              onLongPress={() => handleTaskLongPress(task)}
-              activeOpacity={0.7}
-              delayLongPress={VALIDATION.DELAYS.LONG_PRESS_MENU}
-            >
-              <Text style={[styles.taskTitle, task.completed && styles.taskTitleCompleted]}>
-                {task.title}
-              </Text>
-              {task.notes && <Text style={styles.taskNotes}>{task.notes}</Text>}
-            </TouchableOpacity>
-          )}
-
-          {!task.completed && (
-            <DatePickerButton
-              value={task.due_date}
-              onChange={handleDateChange}
-              disabled={isEditing}
-            />
-          )}
-        </View>
       </View>
     );
   };
@@ -1145,7 +1257,7 @@ export default function CollectionsScreen({
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>Loading…</Text>
         </View>
-      ) : (
+      ) : entries.length === 0 ? (
         <ScrollView
           contentContainerStyle={styles.entriesList}
           refreshControl={
@@ -1157,16 +1269,31 @@ export default function CollectionsScreen({
             />
           }
         >
-          {entries.length === 0 ? (
-            renderEmptyEntries()
-          ) : (
-            entries.map(entry => (
-              <View key={entry.id}>
-                {renderEntry({ item: entry })}
-              </View>
-            ))
-          )}
+          {renderEmptyEntries()}
         </ScrollView>
+      ) : (
+        <DraggableFlatList
+          data={entries}
+          renderItem={({ item, drag, isActive }) => (
+            <ScaleDecorator>
+              <View style={[isActive && styles.entryDragging]}>
+                {renderEntry({ item, drag, isActive })}
+              </View>
+            </ScaleDecorator>
+          )}
+          keyExtractor={(item) => item.id}
+          onDragEnd={handleEntriesDragEnd}
+          containerStyle={styles.entriesList}
+          contentContainerStyle={{ paddingBottom: 150 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefreshEntries}
+              tintColor="#3b82f6"
+              colors={['#3b82f6']}
+            />
+          }
+        />
       )}
 
       {/* Hide FAB in Unsorted - users should organize items, not add directly */}
@@ -1475,7 +1602,7 @@ const styles = StyleSheet.create({
   detailHeaderContent: { flexDirection: 'row', alignItems: 'center' },
   detailHeaderIcon: { fontSize: 32, marginRight: 12 },
   detailHeaderTitle: { fontSize: 24, fontWeight: 'bold', color: '#1a1a1a' },
-  entriesList: { padding: 16, paddingBottom: 100 },
+  entriesList: { padding: 16 },
   taskRow: {
     backgroundColor: '#fff',
     borderRadius: 12,
@@ -1544,6 +1671,75 @@ const styles = StyleSheet.create({
   checkcollectionContent: {
     flex: 1,
   },
+  
+  // TICKET 16: Entry menu button styles (for drag & drop UX)
+  entryWithMenu: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  entryMenuButton: {
+    position: 'absolute',
+    right: 8,
+    top: 8,
+    padding: 8,
+    zIndex: 10,
+  },
+  entryMenuIcon: {
+    fontSize: 20,
+    color: '#9ca3af',
+    fontWeight: 'bold',
+  },
+  
+  // Dedicated drag zone for tasks (right side empty space)
+  taskDragZone: {
+    flex: 1,
+    minHeight: 60,
+    minWidth: 80,
+  },
+  
+  // Inline note card styles (replacing NoteCard component for drag compatibility)
+  noteCard: {
+    backgroundColor: '#fef3c7',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  noteHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  noteBadge: {
+    backgroundColor: '#fbbf24',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    marginRight: 12,
+  },
+  noteBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#78350f',
+    letterSpacing: 0.5,
+  },
+  noteTitle: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#1a1a1a',
+    flex: 1,
+  },
+  noteBody: {
+    fontSize: 14,
+    color: '#92400e',
+    lineHeight: 20,
+  },
+  
   checkcollectionTitle: {
     fontSize: 16,
     color: '#1a1a1a',
@@ -1761,4 +1957,15 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   moveConfirmText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  
+  // TICKET 16: Drag & drop styling (industry standard: subtle lift + no transparency)
+  entryDragging: {
+    transform: [{ scale: 1.03 }],
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 12,
+    borderRadius: 12,
+  },
 });

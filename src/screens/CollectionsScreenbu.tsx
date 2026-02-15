@@ -6,6 +6,9 @@ import ActionMenu, { ActionMenuItem } from '../components/ActionMenu';
 import SelectionMenu, { SelectionOption } from '../components/SelectionMenu';
 import InputModal from '../components/InputModal';
 import MoveToCollectionModal from '../components/MoveToCollectionModal';
+import CreateEntryModal, { CreateEntryPayload } from '../components/CreateEntryModal';
+import { EntryType } from '../components/TypeSelector';
+import { Priority } from '../components/PrioritySelector';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -41,9 +44,11 @@ type FlatCollectionItem =
 export default function CollectionsScreen({
   initialCollectionId,
   onCollectionIdChange,
+  onBack,
 }: {
   initialCollectionId?: string;
   onCollectionIdChange?: (collectionId: string | undefined) => void;
+  onBack?: () => void;
 }) {
   const [collections, setCollections] = useState<Collection[]>([]);
   const [flatData, setFlatData] = useState<FlatCollectionItem[]>([]);
@@ -56,12 +61,6 @@ export default function CollectionsScreen({
   const [loadingEntries, setLoadingEntries] = useState(false);
   
   const [entryModalVisible, setEntryModalVisible] = useState(false);
-  const [entryType, setEntryType] = useState<'task' | 'note' | 'checklist'>('task');
-  const [newEntryTitle, setNewEntryTitle] = useState('');
-  const [newEntryBody, setNewEntryBody] = useState('');
-  const [newTaskDueDate, setNewTaskDueDate] = useState<number | undefined>(undefined);
-  const [newTaskPriority, setNewTaskPriority] = useState<number>(2);
-  const [newChecklistItems, setNewChecklistItems] = useState<string[]>(['', '', '']);
 
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [editingEntryTitle, setEditingEntryTitle] = useState('');
@@ -398,6 +397,10 @@ export default function CollectionsScreen({
     if (onCollectionIdChange) {
       onCollectionIdChange(undefined);
     }
+    // Call onBack to clear parent's selectedCollectionId
+    if (onBack) {
+      onBack();
+    }
     // Refresh collections to reflect any archive changes
     await loadCollections();
   };
@@ -485,64 +488,34 @@ export default function CollectionsScreen({
     }
   };
 
-  const handleAddChecklistItem = () => {
-    setNewChecklistItems([...newChecklistItems, '']);
-  };
-
-  const handleRemoveChecklistItem = (index: number) => {
-    if (newChecklistItems.length > 1) {
-      setNewChecklistItems(newChecklistItems.filter((_, i) => i !== index));
-    }
-  };
-
-  const handleUpdateChecklistItem = (index: number, value: string) => {
-    const updated = [...newChecklistItems];
-    updated[index] = value;
-    setNewChecklistItems(updated);
-  };
-
-  const handleCreateEntry = async () => {
-    const trimmedTitle = newEntryTitle.trim();
-
-    if (!trimmedTitle) {
-      Alert.alert('Empty Title', 'Please enter a title.');
-      return;
-    }
-
+  const handleCreateEntry = async (payload: CreateEntryPayload) => {
     if (!selectedCollection) {
       Alert.alert('Error', 'No collection selected.');
       return;
     }
 
     try {
-      if (entryType === 'task') {
+      if (payload.type === EntryType.TASK) {
         await createTask({
-          title: trimmedTitle,
+          title: payload.title,
           collection_id: selectedCollection.id,
-          due_date: newTaskDueDate,
-          calm_priority: newTaskPriority,
+          due_date: payload.dueDate ?? undefined,
+          calm_priority: payload.priority ?? Priority.NORMAL,
         });
-      } else if (entryType === 'note') {
+      } else if (payload.type === EntryType.NOTE) {
         await createNote({
-          title: trimmedTitle,
-          notes: newEntryBody.trim() || undefined,
+          title: payload.title,
+          notes: payload.noteBody || undefined,
           collection_id: selectedCollection.id,
         });
-      } else if (entryType === 'checklist') {
-        const validItems = newChecklistItems.filter(item => item.trim() !== '');
+      } else if (payload.type === EntryType.CHECKLIST) {
         await createChecklistWithItems({
-          title: trimmedTitle,
+          title: payload.title,
           collection_id: selectedCollection.id,
-          items: validItems,
+          items: payload.checklistItems || [],
         });
       }
 
-      setNewEntryTitle('');
-      setNewEntryBody('');
-      setNewTaskDueDate(undefined);
-      setNewTaskPriority(2);
-      setNewChecklistItems(['', '', '']);
-      setEntryModalVisible(false);
       await loadEntries(selectedCollection.id);
     } catch (error) {
       console.error('Failed to create entry:', error);
@@ -1200,10 +1173,7 @@ export default function CollectionsScreen({
       {selectedCollection && !selectedCollection.is_system && (
         <TouchableOpacity
           style={styles.fab}
-          onPress={() => {
-            setEntryType('task');
-            setEntryModalVisible(true);
-          }}
+          onPress={() => setEntryModalVisible(true)}
           activeOpacity={0.8}
         >
           <Text style={styles.fabText}>+</Text>
@@ -1244,206 +1214,12 @@ export default function CollectionsScreen({
         {renderCollectionDetail()}
 
         {/* Entry Creation Modal */}
-        <Modal
+        <CreateEntryModal
           visible={entryModalVisible}
-          animationType="fade"
-          transparent
-          onRequestClose={() => setEntryModalVisible(false)}
-        >
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={styles.modalContainer}
-          >
-            <TouchableOpacity
-              style={styles.modalOverlay}
-              activeOpacity={1}
-              onPress={() => {
-                setEntryModalVisible(false);
-                setNewEntryTitle('');
-                setNewEntryBody('');
-                setNewTaskPriority(2);
-              }}
-            >
-              <TouchableOpacity
-                activeOpacity={1}
-                onPress={e => e.stopPropagation()}
-              >
-                <View style={styles.modalContent}>
-                  <View style={styles.typeSelectorContainer}>
-                    <TouchableOpacity
-                      style={[
-                        styles.typeButton,
-                        entryType === 'task' && styles.typeButtonActive,
-                      ]}
-                      onPress={() => setEntryType('task')}
-                    >
-                      <Text
-                        style={[
-                          styles.typeButtonText,
-                          entryType === 'task' && styles.typeButtonTextActive,
-                        ]}
-                      >
-                        Task
-                      </Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[
-                        styles.typeButton,
-                        entryType === 'note' && styles.typeButtonActive,
-                      ]}
-                      onPress={() => setEntryType('note')}
-                    >
-                      <Text
-                        style={[
-                          styles.typeButtonText,
-                          entryType === 'note' && styles.typeButtonTextActive,
-                        ]}
-                      >
-                        Note
-                      </Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[
-                        styles.typeButton,
-                        entryType === 'checklist' && styles.typeButtonActive,
-                      ]}
-                      onPress={() => setEntryType('checklist')}
-                    >
-                      <Text
-                        style={[
-                          styles.typeButtonText,
-                          entryType === 'checklist' && styles.typeButtonTextActive,
-                        ]}
-                      >
-                        Checklist
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  <Text style={styles.modalTitle}>
-                    {entryType === 'task' ? 'Add Task' : entryType === 'note' ? 'Add Note' : 'Add Checklist'}
-                  </Text>
-
-                  <TextInput
-                    style={styles.input}
-                    placeholder={entryType === 'task' ? 'Task title' : entryType === 'note' ? 'Note title' : 'Checklist title'}
-                    value={newEntryTitle}
-                    onChangeText={setNewEntryTitle}
-                    autoFocus
-                    returnKeyType={entryType === 'note' ? 'next' : 'done'}
-                    onSubmitEditing={entryType === 'task' || entryType === 'checklist' ? handleCreateEntry : undefined}
-                  />
-
-                  {entryType === 'note' && (
-                    <TextInput
-                      style={[styles.input, styles.bodyInput]}
-                      placeholder="Note body (optional)"
-                      value={newEntryBody}
-                      onChangeText={setNewEntryBody}
-                      multiline
-                      numberOfLines={4}
-                      textAlignVertical="top"
-                    />
-                  )}
-
-                  {entryType === 'checklist' && (
-                    <View style={styles.checklistItemsContainer}>
-                      <Text style={styles.checklistItemsLabel}>Items</Text>
-                      {newChecklistItems.map((item, index) => (
-                        <View key={index} style={styles.checklistItemRow}>
-                          <TextInput
-                            style={styles.checklistItemInput}
-                            placeholder={`Item ${index + 1}`}
-                            value={item}
-                            onChangeText={(value) => handleUpdateChecklistItem(index, value)}
-                          />
-                          {newChecklistItems.length > 1 && (
-                            <TouchableOpacity
-                              onPress={() => handleRemoveChecklistItem(index)}
-                              style={styles.removeItemButton}
-                            >
-                              <Text style={styles.removeItemText}>✕</Text>
-                            </TouchableOpacity>
-                          )}
-                        </View>
-                      ))}
-                      <TouchableOpacity
-                        style={styles.addItemButton}
-                        onPress={handleAddChecklistItem}
-                      >
-                        <Text style={styles.addItemText}>+ Add Item</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
-
-                  {entryType === 'task' && (
-                    <>
-                      <DatePickerButton
-                        value={newTaskDueDate}
-                        onChange={(timestamp) => setNewTaskDueDate(timestamp ?? undefined)}
-                      />
-
-                      <View style={styles.priorityContainer}>
-                        <Text style={styles.priorityLabel}>Priority</Text>
-                        <View style={styles.priorityButtons}>
-                          {[1, 2, 3].map((priority) => (
-                            <TouchableOpacity
-                              key={priority}
-                              style={[
-                                styles.priorityButton,
-                                newTaskPriority === priority && styles.priorityButtonActive,
-                              ]}
-                              onPress={() => setNewTaskPriority(priority)}
-                            >
-                              <Text
-                                style={[
-                                  styles.priorityButtonText,
-                                  newTaskPriority === priority && styles.priorityButtonTextActive,
-                                ]}
-                              >
-                                {getPriorityLabel(priority)}
-                              </Text>
-                            </TouchableOpacity>
-                          ))}
-                        </View>
-                      </View>
-                    </>
-                  )}
-
-                  <View style={styles.modalButtons}>
-                    <TouchableOpacity
-                      style={[styles.button, styles.buttonCancel]}
-                      onPress={() => {
-                        setEntryModalVisible(false);
-                        setNewEntryTitle('');
-                        setNewEntryBody('');
-                        setNewTaskPriority(2);
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.buttonCancelText}>Cancel</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[
-                        styles.button,
-                        styles.buttonCreate,
-                        !newEntryTitle.trim() && styles.buttonDisabled,
-                      ]}
-                      onPress={handleCreateEntry}
-                      activeOpacity={0.7}
-                      disabled={!newEntryTitle.trim()}
-                    >
-                      <Text style={styles.buttonCreateText}>Add</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </TouchableOpacity>
-            </TouchableOpacity>
-          </KeyboardAvoidingView>
-        </Modal>
+          onClose={() => setEntryModalVisible(false)}
+          onSubmit={handleCreateEntry}
+          fixedCollectionId={selectedCollection?.id}
+        />
 
         {/* Move to Collection Modal */}
         <MoveToCollectionModal

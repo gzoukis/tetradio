@@ -4,7 +4,7 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 
 import OverviewScreen from './src/screens/OverviewScreen';
@@ -13,6 +13,7 @@ import CollectionsScreen from './src/screens/CollectionsScreen';
 import ExpensesScreen from './src/screens/ExpensesScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import { initDatabase, getDatabase } from './src/db/database';
+import type { TaskViewState, TaskFilter } from './src/types/filters';
 
 type Tab = 'overview' | 'tasks' | 'collections' | 'expenses' | 'settings';
 
@@ -122,6 +123,7 @@ async function initializeApp() {
 function AppContent() {
   const [tab, setTab] = useState<Tab>('overview');
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | undefined>(undefined);
+  const [taskViewState, setTaskViewState] = useState<TaskViewState | null>(null);
   const [appReady, setAppReady] = useState(false);
   const insets = useSafeAreaInsets();
 
@@ -139,6 +141,12 @@ function AppContent() {
       });
   }, []);
 
+  // TICKET 17A BUG FIX: Stable callback to prevent infinite loop
+  // Must be memoized so TasksScreen's useEffect doesn't trigger on every render
+  const handleFilterChange = useCallback((filter: TaskFilter) => {
+    setTaskViewState({ filter });
+  }, []);
+
   const renderScreen = () => {
     // Show loading until database is ready
     if (!appReady) {
@@ -151,7 +159,13 @@ function AppContent() {
     
     switch (tab) {
       case 'tasks':
-        return <TasksScreen goToCollections={() => setTab('collections')} />;
+        return (
+          <TasksScreen 
+            initialFilter={taskViewState?.filter ?? 'all'}
+            onFilterChange={handleFilterChange}
+            goToCollections={() => setTab('collections')} 
+          />
+        );
       case 'collections':
         return (
           <CollectionsScreen 
@@ -165,13 +179,21 @@ function AppContent() {
       case 'settings':
         return <SettingsScreen />;
       default:
-        return <OverviewScreen 
-          onViewTasks={() => setTab('tasks')}
-          goToCollections={(listId) => {
-            setSelectedCollectionId(listId);
-            setTab('collections');
-          }}
-        />;
+        return (
+          <OverviewScreen 
+            onViewTasks={(filter) => {
+              // TICKET 17A: Deep linking to TasksScreen with filter
+              // If filter provided: preserve it (user expects to see that view)
+              // If no filter: reset to 'all' (default view)
+              setTaskViewState({ filter: filter ?? 'all' });
+              setTab('tasks');
+            }}
+            goToCollections={(listId) => {
+              setSelectedCollectionId(listId);
+              setTab('collections');
+            }}
+          />
+        );
     }
   };
 
