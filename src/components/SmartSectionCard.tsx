@@ -3,6 +3,7 @@
  * 
  * TICKET 17B: Tetradio Notebook-Style Overview Cards
  * TICKET 17C: Design System Hardening + Accessibility
+ * TICKET 17D: Interaction & Motion Polish
  * 
  * A reusable card component that displays a section of tasks with:
  * - Header with title and count badge
@@ -11,20 +12,24 @@
  * - "View More" link for 4+ tasks
  * - Notebook-inspired visual design
  * - WCAG AA accessible
+ * - Subtle press animations (17D)
  * 
  * Design inspired by classic blue A4 tetradio notebooks with
  * clean lines, subtle shadows, and calm color palette.
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
+  Animated,
+  AccessibilityInfo,
 } from 'react-native';
 import type { TaskFilter } from '../types/filters';
 import { colors, spacing, typography, elevation, borderRadius, sizes, opacity } from '../theme/tokens';
+import { durations, scale as scaleValues, patterns } from '../animations/motion';
 
 // TICKET 17B: Task interface for preview
 // Using minimal subset needed for preview display
@@ -137,31 +142,113 @@ export default function SmartSectionCard({
   const isEmpty = tasks.length === 0;
   const isUrgent = accent === 'urgent';
   
+  // TICKET 17D: Press animation (scale + shadow)
+  const scaleAnim = useRef(new Animated.Value(scaleValues.rest)).current;
+  const viewMoreOpacity = useRef(new Animated.Value(patterns.viewMoreFade.opacityStart)).current;
+  const badgeScale = useRef(new Animated.Value(scaleValues.rest)).current;
+  const [reduceMotion, setReduceMotion] = React.useState(false);
+  const [prevCount, setPrevCount] = React.useState(count);
+  
+  // TICKET 17D: Check for reduced motion preference + LISTEN for changes
+  useEffect(() => {
+    // Initial check
+    AccessibilityInfo.isReduceMotionEnabled().then(enabled => {
+      setReduceMotion(enabled);
+      
+      // TICKET 17D: Subtle View More fade-in using motion constants
+      if (!enabled && hasMore) {
+        Animated.timing(viewMoreOpacity, {
+          toValue: patterns.viewMoreFade.opacityEnd,
+          duration: patterns.viewMoreFade.duration,
+          delay: patterns.viewMoreFade.delay,
+          useNativeDriver: true,
+        }).start();
+      }
+    });
+    
+    // PRODUCTION FIX: Listen for runtime changes
+    const subscription = AccessibilityInfo.addEventListener(
+      'reduceMotionChanged',
+      setReduceMotion
+    );
+    
+    return () => subscription?.remove();
+  }, [hasMore]);
+  
+  // TICKET 17D: Badge count animation - pulse when value changes
+  // Using motion constants for consistency
+  useEffect(() => {
+    if (count !== prevCount && !reduceMotion && prevCount !== count) {
+      setPrevCount(count);
+      
+      // Quick scale pulse using motion constants
+      Animated.sequence([
+        Animated.timing(badgeScale, {
+          toValue: patterns.badgePulse.scale,
+          duration: patterns.badgePulse.duration,
+          useNativeDriver: true,
+        }),
+        Animated.timing(badgeScale, {
+          toValue: scaleValues.rest,
+          duration: patterns.badgePulse.duration,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [count, prevCount, reduceMotion]);
+  
+  // TICKET 17D: Press handlers using motion constants
+  const handlePressIn = () => {
+    if (reduceMotion) return;
+    
+    Animated.timing(scaleAnim, {
+      toValue: scaleValues.press,
+      duration: patterns.cardPress.durationIn,
+      useNativeDriver: true,
+    }).start();
+  };
+  
+  const handlePressOut = () => {
+    if (reduceMotion) return;
+    
+    Animated.timing(scaleAnim, {
+      toValue: scaleValues.rest,
+      duration: patterns.cardPress.durationOut,
+      useNativeDriver: true,
+    }).start();
+  };
+  
   return (
-    <TouchableOpacity
-      style={[
-        styles.card,
-        isUrgent && styles.cardUrgent,
-      ]}
-      onPress={() => onPress(filter)}
-      activeOpacity={opacity.touchActive}
-      accessibilityRole="button"
-      accessibilityLabel={getAccessibilityLabel(title, count, filter)}
-    >
+    <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+      <TouchableOpacity
+        style={[
+          styles.card,
+          isUrgent && styles.cardUrgent,
+        ]}
+        onPress={() => onPress(filter)}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        activeOpacity={opacity.touchActive}
+        accessibilityRole="button"
+        accessibilityLabel={getAccessibilityLabel(title, count, filter)}
+      >
       {/* Header Row */}
       <View style={styles.header}>
         <Text style={styles.title}>{title}</Text>
-        <View style={[
-          styles.countBadge,
-          isUrgent ? styles.countBadgeUrgent : styles.countBadgeNormal,
-        ]}>
-          <Text style={[
-            styles.countText,
-            isUrgent && styles.countTextUrgent,
+        {/* TICKET 17D: Badge with pulse animation on count change */}
+        <Animated.View style={{ transform: [{ scale: reduceMotion ? 1 : badgeScale }] }}>
+          <View style={[
+            styles.countBadge,
+            isUrgent ? styles.countBadgeUrgent : styles.countBadgeNormal,
           ]}>
-            {count}
-          </Text>
-        </View>
+            <Text style={[
+              styles.countText,
+              isUrgent && styles.countTextUrgent,
+            ]}>
+              {count}
+            </Text>
+          </View>
+        </Animated.View>
       </View>
       
       {/* Subtitle (for Organize section) */}
@@ -241,22 +328,25 @@ export default function SmartSectionCard({
             );
             })}
             
-            {/* View More Link */}
+            {/* View More Link - TICKET 17D: Subtle fade animation */}
             {hasMore && (
-              <TouchableOpacity 
-                style={styles.viewMoreButton}
-                onPress={() => onPress(filter)}
-                activeOpacity={opacity.touchActive}
-                accessibilityRole="button"
-                accessibilityLabel={`View all ${count} ${title.replace(/[^\w\s]/g, '').trim().toLowerCase()}`}
-              >
-                <Text style={styles.viewMoreText}>View more →</Text>
-              </TouchableOpacity>
+              <Animated.View style={{ opacity: reduceMotion ? 1 : viewMoreOpacity }}>
+                <TouchableOpacity 
+                  style={styles.viewMoreButton}
+                  onPress={() => onPress(filter)}
+                  activeOpacity={opacity.touchActive}
+                  accessibilityRole="button"
+                  accessibilityLabel={`View all ${count} ${title.replace(/[^\w\s]/g, '').trim().toLowerCase()}`}
+                >
+                  <Text style={styles.viewMoreText}>View more →</Text>
+                </TouchableOpacity>
+              </Animated.View>
             )}
           </>
         )}
       </View>
     </TouchableOpacity>
+    </Animated.View>
   );
 }
 

@@ -3,7 +3,7 @@ import CreateEntryModal, { CreateEntryPayload } from '../components/CreateEntryM
 import InputModal from '../components/InputModal';
 import SelectionMenu, { SelectionOption } from '../components/SelectionMenu';
 import SmartSectionCard from '../components/SmartSectionCard';
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,8 @@ import {
   TouchableOpacity,
   RefreshControl,
   Alert,
+  Animated,
+  AccessibilityInfo,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { getAllActiveTasks, getAllCollections, createTask, createNote, getOrCreateUnsortedCollection, createCollection } from '../db/operations';
@@ -22,19 +24,23 @@ import { groupTasksByTime } from '../utils/timeClassification';
 import { getPriorityLabel } from '../utils/formatting';
 import type { TaskFilter } from '../types/filters';
 import { colors, spacing, typography, elevation, borderRadius, sizes, opacity } from '../theme/tokens';
+import { durations, scale as scaleValues, translate, patterns, easing } from '../animations/motion';
 
 type QuickCreateMode = 'entry' | 'new-collection';
 
 export default function OverviewScreen({
   onViewTasks,
   goToCollections,
+  isActive = true,
 }: {
   onViewTasks: (filter?: TaskFilter) => void;
   goToCollections: (collectionId?: string) => void;
+  isActive?: boolean;
 }) {
   const [tasks, setTasks] = useState<TaskWithCollectionName[]>([]);
   const [pinnedCollections, setPinnedCollections] = useState<Collection[]>([]);
   const [loading, setLoading] = useState(true);
+  const [initialLoad, setInitialLoad] = useState(true); // TICKET 17F.1: Track if first load
   const [refreshing, setRefreshing] = useState(false);
   
   // Quick Create Modal
@@ -48,22 +54,146 @@ export default function OverviewScreen({
   
   // New collection creation
   const [newCollectionName, setNewCollectionName] = useState('');
+  
+  // TICKET 17D: Animation state
+  const [reduceMotion, setReduceMotion] = useState(false);
+  const fabScale = useRef(new Animated.Value(1)).current;
+  
+  // Card mount animations (staggered fade + translate)
+  const cardAnims = useRef([
+    new Animated.Value(0), // Card 1 opacity
+    new Animated.Value(0), // Card 2 opacity
+    new Animated.Value(0), // Card 3 opacity
+    new Animated.Value(0), // Card 4 opacity
+  ]).current;
+  
+  // TICKET 17F.1: Separate highlight animations for return visits (scale-based, more visible)
+  const highlightAnims = useRef([
+    new Animated.Value(1),
+    new Animated.Value(1),
+    new Animated.Value(1),
+    new Animated.Value(1),
+  ]).current;
+  
+  // TICKET 17F.1: Prevent re-animation on tab switch
+  const hasMountedRef = useRef(false);
+  
+  // TICKET 17F.1: Refresh crossfade animation
+  const refreshOpacity = useRef(new Animated.Value(1)).current;
+  
+  // TICKET 17F.1: Scroll preservation
+  const scrollViewRef = useRef<ScrollView>(null);
+  const scrollY = useRef(0);
 
   useEffect(() => {
+    // TICKET 17D: Check reduced motion preference + LISTEN for changes
+    AccessibilityInfo.isReduceMotionEnabled().then(enabled => {
+      setReduceMotion(enabled);
+    });
+    
+    // PRODUCTION FIX: Listen for runtime changes
+    const subscription = AccessibilityInfo.addEventListener(
+      'reduceMotionChanged',
+      setReduceMotion
+    );
+    
+    return () => subscription?.remove();
+  }, []);
+  
+  // TICKET 17F.1: Load data on mount
+  useEffect(() => {
+    console.log('🚀 OverviewScreen mounted, isActive:', isActive);
     loadTasks();
     loadCollections();
     loadPinnedCollections();
   }, []);
+  
+  // TICKET 17F.1: Reload data when screen becomes active (handles stale data)
+  const prevActive = useRef(isActive);
+  useEffect(() => {
+    console.log('🔄 isActive effect:', { isActive, prevActive: prevActive.current });
+    
+    if (isActive && !prevActive.current) {
+      // Screen just became active
+      console.log('📱 Overview became active, reloading data');
+      loadTasks();
+      loadCollections();
+      loadPinnedCollections();
+      
+      // TICKET 17F.1: Subtle highlight on return (only if already animated once)
+      if (hasMountedRef.current && !reduceMotion) {
+        console.log('✨ Subtle return highlight');
+        highlightAnims.forEach((anim, index) => {
+          Animated.sequence([
+            Animated.timing(anim, {
+              toValue: 0.97,
+              duration: 100,
+              delay: index * 30,
+              useNativeDriver: true,
+            }),
+            Animated.spring(anim, {
+              toValue: 1,
+              friction: 4,
+              tension: 100,
+              useNativeDriver: true,
+            }),
+          ]).start();
+        });
+      }
+    }
+    prevActive.current = isActive;
+  }, [isActive]);
+  
+  // TICKET 17F.1: Trigger card mount animation when screen becomes active for FIRST time
+  useEffect(() => {
+    console.log('🔍 Animation effect triggered:', {
+      loading,
+      refreshing,
+      isActive,
+      hasMounted: hasMountedRef.current,
+      reduceMotion,
+      tasksCount: tasks.length,
+    });
+    
+    if (!loading && !refreshing && isActive && !hasMountedRef.current && !reduceMotion && tasks.length > 0) {
+      console.log('🎬 ✅ ALL CONDITIONS MET - Triggering card mount animation');
+      hasMountedRef.current = true;
+      
+      // Stagger animations using motion constants
+      cardAnims.forEach((anim, index) => {
+        console.log(`  Card ${index}: animating from 0 to 1`);
+        Animated.timing(anim, {
+          toValue: 1,
+          duration: patterns.cardMount.duration,
+          delay: index * patterns.cardMount.stagger,
+          useNativeDriver: true,
+        }).start(() => {
+          console.log(`  Card ${index}: animation complete`);
+        });
+      });
+    } else if ((hasMountedRef.current || reduceMotion) && tasks.length > 0) {
+      console.log('🎬 ⚡ Setting cards instantly (already animated or reduced motion)');
+      cardAnims.forEach(anim => anim.setValue(1));
+    } else {
+      console.log('🎬 ❌ Conditions not met, cards stay hidden');
+    }
+  }, [loading, refreshing, isActive, tasks.length, reduceMotion]);
 
   const loadTasks = async () => {
     try {
-      setLoading(true);
+      // TICKET 17F.1: Only set loading on initial load, not during refresh
+      if (!refreshing) {
+        setLoading(true);
+      }
       const allTasks = await getAllActiveTasks();
       setTasks(allTasks);
     } catch (error) {
       console.error('Failed to load tasks:', error);
     } finally {
-      setLoading(false);
+      if (!refreshing) {
+        setLoading(false);
+        setInitialLoad(false); // TICKET 17F.1: First load complete
+      }
     }
   };
   
@@ -93,6 +223,20 @@ export default function OverviewScreen({
       const pinned = collections.filter(l => l.is_pinned && !l.is_system && !l.is_archived)
         .sort((a, b) => a.sort_order - b.sort_order);
       setPinnedCollections(pinned);
+      
+      // TICKET 17F.1: Restore scroll after render completes
+      // Double RAF ensures layout is done
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (scrollY.current > 0 && scrollViewRef.current) {
+            console.log('📜 Restoring Overview scroll to:', scrollY.current);
+            scrollViewRef.current.scrollTo({
+              y: scrollY.current,
+              animated: false,
+            });
+          }
+        });
+      });
     } catch (error) {
       console.error('Failed to load pinned collections:', error);
     }
@@ -100,9 +244,29 @@ export default function OverviewScreen({
 
   const handleRefresh = async () => {
     setRefreshing(true);
+    
+    // TICKET 17F.1: Smooth crossfade during refresh
+    if (!reduceMotion) {
+      Animated.timing(refreshOpacity, {
+        toValue: 0.7,
+        duration: 150,
+        useNativeDriver: true,
+      }).start();
+    }
+    
     await loadTasks();
     await loadCollections();
     await loadPinnedCollections();
+    
+    // TICKET 17F.1: Fade back to full opacity
+    if (!reduceMotion) {
+      Animated.timing(refreshOpacity, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
+    }
+    
     setRefreshing(false);
   };
   
@@ -210,7 +374,7 @@ export default function OverviewScreen({
     return grouped.no_date;
   }, [grouped.no_date]);
 
-  if (loading) {
+  if (loading && !refreshing && initialLoad) {
     return (
       <View style={styles.loadingContainer}>
         <Text style={styles.loadingText}>Loading overview...</Text>
@@ -226,8 +390,13 @@ export default function OverviewScreen({
         style={styles.gradientContainer}
       >
         <ScrollView
+          ref={scrollViewRef}
           style={styles.container}
           contentContainerStyle={styles.content}
+          onScroll={(e) => {
+            scrollY.current = e.nativeEvent.contentOffset.y;
+          }}
+          scrollEventThrottle={16}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -237,54 +406,108 @@ export default function OverviewScreen({
             />
           }
         >
+        {/* TICKET 17F.1: Smooth crossfade wrapper during refresh */}
+        <Animated.View style={{ opacity: refreshOpacity }}>
         {/* TICKET 17B: Tetradio Notebook-Style Smart Section Cards */}
         
-        {/* Needs Attention (Overdue) - FIX 2: Only show if overdue tasks exist */}
+        {/* Needs Attention (Overdue) - TICKET 17D: Animated mount with motion constants */}
         {grouped.overdue.length > 0 && (
-          <SmartSectionCard
-            title="🔴 Needs Attention"
-            count={grouped.overdue.length}
-            tasks={grouped.overdue}
-            filter="overdue"
-            onPress={onViewTasks}
-            accent="urgent"
-            emptyMessage="All clear. Nothing overdue."
-          />
+          <Animated.View style={{
+            opacity: reduceMotion ? 1 : cardAnims[0],
+            transform: reduceMotion ? [] : [
+              {
+                translateY: cardAnims[0].interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [translate.cardMount, 0],
+                })
+              },
+              { scale: highlightAnims[0] },
+            ]
+          }}>
+            <SmartSectionCard
+              title="🔴 Needs Attention"
+              count={grouped.overdue.length}
+              tasks={grouped.overdue}
+              filter="overdue"
+              onPress={onViewTasks}
+              accent="urgent"
+              emptyMessage="All clear. Nothing overdue."
+            />
+          </Animated.View>
         )}
 
-        {/* Focus Today */}
-        <SmartSectionCard
-          title="⭐ Focus Today"
-          count={grouped.today.length}
-          tasks={grouped.today}
-          filter="today"
-          onPress={onViewTasks}
-          emptyMessage="Nothing scheduled for today."
-        />
+        {/* Focus Today - TICKET 17D: Animated mount with motion constants */}
+        <Animated.View style={{
+          opacity: reduceMotion ? 1 : cardAnims[1],
+          transform: reduceMotion ? [] : [
+            {
+              translateY: cardAnims[1].interpolate({
+                inputRange: [0, 1],
+                outputRange: [translate.cardMount, 0],
+              })
+            },
+            { scale: highlightAnims[1] },
+          ]
+        }}>
+          <SmartSectionCard
+            title="⭐ Focus Today"
+            count={grouped.today.length}
+            tasks={grouped.today}
+            filter="today"
+            onPress={onViewTasks}
+            emptyMessage="Nothing scheduled for today."
+          />
+        </Animated.View>
 
-        {/* Coming Up (Upcoming) */}
-        <SmartSectionCard
-          title="⏳ Coming Up"
-          count={grouped.upcoming.length}
-          tasks={grouped.upcoming}
-          filter="upcoming"
-          onPress={onViewTasks}
-          emptyMessage="No upcoming tasks yet."
-        />
+        {/* Coming Up - TICKET 17D: Animated mount with motion constants */}
+        <Animated.View style={{
+          opacity: reduceMotion ? 1 : cardAnims[2],
+          transform: reduceMotion ? [] : [
+            {
+              translateY: cardAnims[2].interpolate({
+                inputRange: [0, 1],
+                outputRange: [translate.cardMount, 0],
+              })
+            },
+            { scale: highlightAnims[2] },
+          ]
+        }}>
+          <SmartSectionCard
+            title="⏳ Coming Up"
+            count={grouped.upcoming.length}
+            tasks={grouped.upcoming}
+            filter="upcoming"
+            onPress={onViewTasks}
+            emptyMessage="No upcoming tasks yet."
+          />
+        </Animated.View>
 
-        {/* Organize (No Date + Completed Count) */}
-        <SmartSectionCard
-          title="📁 Organize"
-          count={organizeTasks.length}
-          tasks={organizeTasks}
-          filter="no-date"
-          onPress={onViewTasks}
-          emptyMessage="Everything is organized."
-          subtitle={grouped.completed.length > 0 
-            ? `${grouped.completed.length} completed task${grouped.completed.length === 1 ? '' : 's'}`
-            : undefined
-          }
-        />
+        {/* Organize - TICKET 17D: Animated mount with motion constants */}
+        <Animated.View style={{
+          opacity: reduceMotion ? 1 : cardAnims[3],
+          transform: reduceMotion ? [] : [
+            {
+              translateY: cardAnims[3].interpolate({
+                inputRange: [0, 1],
+                outputRange: [translate.cardMount, 0],
+              })
+            },
+            { scale: highlightAnims[3] },
+          ]
+        }}>
+          <SmartSectionCard
+            title="📁 Organize"
+            count={organizeTasks.length}
+            tasks={organizeTasks}
+            filter="no-date"
+            onPress={onViewTasks}
+            emptyMessage="Everything is organized."
+            subtitle={grouped.completed.length > 0 
+              ? `${grouped.completed.length} completed task${grouped.completed.length === 1 ? '' : 's'}`
+              : undefined
+            }
+          />
+        </Animated.View>
 
         {/* Pinned Collections */}
         {pinnedCollections.length > 0 ? (
@@ -325,18 +548,40 @@ export default function OverviewScreen({
             </Text>
           </View>
         )}
+        </Animated.View>
+        {/* End TICKET 17F.1: Refresh crossfade wrapper */}
       </ScrollView>
 
-      {/* Quick Create FAB */}
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={handleOpenQuickCreate}
-        activeOpacity={opacity.touchActive}
-        accessibilityRole="button"
-        accessibilityLabel="Create new task or note"
-      >
-        <Text style={styles.fabText}>+</Text>
-      </TouchableOpacity>
+      {/* Quick Create FAB - TICKET 17D: Animated with motion constants */}
+      <Animated.View style={{ transform: [{ scale: fabScale }] }}>
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={handleOpenQuickCreate}
+          onPressIn={() => {
+            if (!reduceMotion) {
+              Animated.timing(fabScale, {
+                toValue: patterns.fabPress.scale,
+                duration: patterns.fabPress.durationIn,
+                useNativeDriver: true,
+              }).start();
+            }
+          }}
+          onPressOut={() => {
+            if (!reduceMotion) {
+              Animated.spring(fabScale, {
+                toValue: scaleValues.rest,
+                friction: patterns.fabPress.springFriction,
+                useNativeDriver: true,
+              }).start();
+            }
+          }}
+          activeOpacity={opacity.touchActive}
+          accessibilityRole="button"
+          accessibilityLabel="Create new task or note"
+        >
+          <Text style={styles.fabText}>+</Text>
+        </TouchableOpacity>
+      </Animated.View>
       </LinearGradient>
 
       {/* Quick Create Modal - Entry Mode */}

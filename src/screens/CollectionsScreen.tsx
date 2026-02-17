@@ -22,6 +22,8 @@ import {
   RefreshControl,
   ActionSheetIOS,
   ScrollView,
+  Animated,
+  AccessibilityInfo,
 } from 'react-native';
 import DraggableFlatList, { RenderItemParams, ScaleDecorator } from 'react-native-draggable-flatlist';
 import { getAllCollections, createCollection, deleteCollection, getActiveEntriesCountByCollectionId, archiveCollection, moveEntryToCollection, toggleCollectionPin, updateCollectionSortOrders, renameCollection, updateEntrySortOrders } from '../db/operations';
@@ -31,6 +33,7 @@ import { getChecklistsByCollectionId, createChecklist, createChecklistWithItems,
 import type { Collection, Task, Note, ChecklistWithStats } from '../types/models';
 import { getPriorityLabel, getPriorityStyle } from '../utils/formatting';
 import { getUserFriendlyError, VALIDATION, normalizeNameCanonical } from '../utils/validation';
+import { patterns } from '../animations/motion';
 
 type CollectionEntry = Task | Note | ChecklistWithStats;
 type MoveModalMode = 'select-collection' | 'new-collection';
@@ -44,14 +47,17 @@ export default function CollectionsScreen({
   initialCollectionId,
   onCollectionIdChange,
   onBack,
+  isActive = true,
 }: {
   initialCollectionId?: string;
   onCollectionIdChange?: (collectionId: string | undefined) => void;
   onBack?: () => void;
+  isActive?: boolean;
 }) {
   const [collections, setCollections] = useState<Collection[]>([]);
   const [flatData, setFlatData] = useState<FlatCollectionItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [initialLoad, setInitialLoad] = useState(true); // TICKET 17F.1
   const [modalVisible, setModalVisible] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState('');
 
@@ -95,10 +101,56 @@ export default function CollectionsScreen({
   const [priorityMenuVisible, setPriorityMenuVisible] = useState(false);
   const [selectedTaskForPriority, setSelectedTaskForPriority] = useState<Task | null>(null);
 
+  // TICKET 17F.1: Mount animation and scroll preservation
+  const [reduceMotion, setReduceMotion] = useState(false);
+  const hasMountedRef = useRef(false);
+  const listFadeAnim = useRef(new Animated.Value(0)).current;
+  const listSlideAnim = useRef(new Animated.Value(12)).current;
+
   useEffect(() => {
+    // Check reduced motion
+    AccessibilityInfo.isReduceMotionEnabled().then(enabled => {
+      setReduceMotion(enabled);
+    });
+    
     loadCollections();
   }, []);
-
+  
+  // TICKET 17F.1: Reload when screen becomes active
+  const prevActive = useRef(isActive);
+  useEffect(() => {
+    if (isActive && !prevActive.current) {
+      console.log('📱 Collections became active, reloading data');
+      loadCollections();
+    }
+    prevActive.current = isActive;
+  }, [isActive]);
+  
+  // TICKET 17F.1: Trigger mount animation on FIRST ACTIVE state
+  useEffect(() => {
+    if (!loading && collections.length > 0 && !hasMountedRef.current && !reduceMotion && isActive) {
+      console.log('🎬 Triggering Collections list mount animation');
+      hasMountedRef.current = true;
+      
+      Animated.parallel([
+        Animated.timing(listFadeAnim, {
+          toValue: 1,
+          duration: 240,
+          useNativeDriver: true,
+        }),
+        Animated.timing(listSlideAnim, {
+          toValue: 0,
+          duration: 240,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else if ((hasMountedRef.current || reduceMotion) && collections.length > 0) {
+      // Only set to 1 if already animated or reduced motion
+      listFadeAnim.setValue(1);
+      listSlideAnim.setValue(0);
+    }
+  }, [loading, collections.length, reduceMotion, isActive]);
+  
   useEffect(() => {
     if (selectedCollection) {
       loadEntries(selectedCollection.id);
@@ -136,6 +188,7 @@ export default function CollectionsScreen({
       Alert.alert('Error', 'Unable to load collections. Please try again.');
     } finally {
       setLoading(false);
+      setInitialLoad(false); // TICKET 17F.1
     }
   };
 
@@ -1369,7 +1422,7 @@ export default function CollectionsScreen({
 
   return (
     <View style={styles.container}>
-      {loading ? (
+      {loading && initialLoad ? (
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>Loading…</Text>
         </View>
@@ -1377,15 +1430,23 @@ export default function CollectionsScreen({
         <>
           {collections.length === 0 ? (
             renderEmptyCollections()
-          ) : (
-            <DraggableFlatList
-              data={flatData}
-              renderItem={renderListRow}
-              keyExtractor={(item) => item.id}
-              onDragEnd={handleDragEnd}
-              activationDistance={10}
-              contentContainerStyle={styles.collectionContainer}
-            />
+            ) : (
+            <Animated.View style={{
+              flex: 1,
+              opacity: reduceMotion ? 1 : listFadeAnim,
+              transform: reduceMotion ? [] : [{
+                translateY: listSlideAnim,
+              }],
+            }}>
+              <DraggableFlatList
+                data={flatData}
+                renderItem={renderListRow}
+                keyExtractor={(item) => item.id}
+                onDragEnd={handleDragEnd}
+                activationDistance={10}
+                contentContainerStyle={styles.collectionContainer}
+              />
+            </Animated.View>
           )}
 
           <TouchableOpacity

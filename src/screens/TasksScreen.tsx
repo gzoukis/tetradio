@@ -1,6 +1,6 @@
 import DatePickerButton from '../components/DatePickerButton';
 import SelectionMenu, { SelectionOption } from '../components/SelectionMenu';
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -29,15 +29,18 @@ export default function TasksScreen({
   initialFilter = 'all',
   onFilterChange,
   goToCollections,
-  fromOverview = false,  // FIX 1: Track if navigating from Overview
+  fromOverview = false,
+  isActive = true,
 }: { 
   initialFilter?: TaskFilter;
   onFilterChange?: (filter: TaskFilter) => void;
   goToCollections: () => void;
-  fromOverview?: boolean;  // FIX 1: Control empty state display
+  fromOverview?: boolean;
+  isActive?: boolean;
 }) {
   const [sections, setSections] = useState<TaskSection[]>([]);
   const [loading, setLoading] = useState(true);
+  const [initialLoad, setInitialLoad] = useState(true); // TICKET 17F.1
   const [refreshing, setRefreshing] = useState(false);
   const [completedCollapsed, setCompletedCollapsed] = useState(true);
   const [showEmptyState, setShowEmptyState] = useState(fromOverview);  // FIX 1: Only show initially if from Overview
@@ -47,6 +50,10 @@ export default function TasksScreen({
   // TICKET 17A: Centralized filter state
   // Controls which subset of tasks is visible (all, today, overdue, etc.)
   const [activeFilter, setActiveFilter] = useState<TaskFilter>(initialFilter);
+  
+  // TICKET 17F.1: Scroll preservation
+  const scrollViewRef = useRef<SectionList>(null);
+  const scrollY = useRef(0);
   
   // TICKET 17A HARDENING: Store all tasks for in-memory filtering
   // Load once from DB, filter locally via useMemo
@@ -97,6 +104,28 @@ export default function TasksScreen({
   useEffect(() => {
     loadTasks();
   }, []);
+  
+  // TICKET 17F.1: Reload when screen becomes active
+  const prevActive = useRef(isActive);
+  useEffect(() => {
+    if (isActive && !prevActive.current) {
+      console.log('📱 Tasks became active, reloading data');
+      loadTasks();
+      
+      // TICKET 17F.1: Restore scroll position when returning to screen
+      // Use getScrollResponder() - the correct way to scroll a SectionList
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (scrollY.current > 0 && scrollViewRef.current) {
+            console.log('📜 Restoring Tasks scroll to:', scrollY.current);
+            const responder = scrollViewRef.current.getScrollResponder();
+            responder?.scrollTo({ y: scrollY.current, animated: false });
+          }
+        });
+      });
+    }
+    prevActive.current = isActive;
+  }, [isActive]);
 
   // TICKET 17A HARDENING: Update sections when grouped tasks or collapsed state changes
   useEffect(() => {
@@ -156,6 +185,7 @@ export default function TasksScreen({
       Alert.alert('Error', 'Unable to load items. Please try again.');
     } finally {
       setLoading(false);
+      setInitialLoad(false); // TICKET 17F.1
     }
   };
 
@@ -395,7 +425,7 @@ export default function TasksScreen({
     return null;
   };
 
-  if (loading) {
+  if (loading && initialLoad) {
     return (
       <View style={styles.loadingContainer}>
         <Text style={styles.loadingText}>Loading…</Text>
@@ -522,8 +552,13 @@ export default function TasksScreen({
       )}
 
       <SectionList
+        ref={scrollViewRef}
         sections={sections}
         renderItem={renderTask}
+        onScroll={(e) => {
+          scrollY.current = e.nativeEvent.contentOffset.y;
+        }}
+        scrollEventThrottle={16}
         renderSectionHeader={({ section }) => {
           const isCompleted = section.title.startsWith('COMPLETED');
           const isEmpty = section.data.length === 0 && !section.collapsed;
