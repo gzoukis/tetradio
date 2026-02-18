@@ -1,5 +1,8 @@
 import DatePickerButton from '../components/DatePickerButton';
 import SelectionMenu, { SelectionOption } from '../components/SelectionMenu';
+import NotebookLayer from '../components/NotebookLayer';
+import { useNotebookModeContext } from '../context/NotebookModeContext';
+import { colors } from '../theme/tokens';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
@@ -43,13 +46,32 @@ export default function TasksScreen({
   const [initialLoad, setInitialLoad] = useState(true); // TICKET 17F.1
   const [refreshing, setRefreshing] = useState(false);
   const [completedCollapsed, setCompletedCollapsed] = useState(true);
-  const [showEmptyState, setShowEmptyState] = useState(fromOverview);  // FIX 1: Only show initially if from Overview
+  const [showEmptyState, setShowEmptyState] = useState(fromOverview);
   const [priorityMenuVisible, setPriorityMenuVisible] = useState(false);
   const [selectedTaskForPriority, setSelectedTaskForPriority] = useState<TaskWithCollectionName | null>(null);
   
+  // TICKET 18A: Notebook mode
+  const { mode: notebookMode } = useNotebookModeContext();
+  
   // TICKET 17A: Centralized filter state
-  // Controls which subset of tasks is visible (all, today, overdue, etc.)
   const [activeFilter, setActiveFilter] = useState<TaskFilter>(initialFilter);
+  
+  // BUG FIX: Sync showEmptyState when fromOverview prop changes.
+  // Always-mounted screens don't re-run useState(), so we watch the prop explicitly.
+  // Only sync when fromOverview becomes true (Overview → Tasks navigation).
+  // We do NOT sync when it becomes false — that would kill the empty state mid-display.
+  const prevFromOverview = useRef(fromOverview);
+  useEffect(() => {
+    if (fromOverview !== prevFromOverview.current) {
+      if (fromOverview) {
+        // New navigation from Overview — show empty state
+        setShowEmptyState(true);
+      }
+      // When fromOverview goes false (parent cleared it), we intentionally
+      // do NOT clear showEmptyState — user must explicitly dismiss it
+      prevFromOverview.current = fromOverview;
+    }
+  }, [fromOverview]);
   
   // TICKET 17F.1: Scroll preservation
   const scrollViewRef = useRef<SectionList>(null);
@@ -89,13 +111,21 @@ export default function TasksScreen({
   }, [visibleActiveTasks, completedTasks]);
 
   // TICKET 17A: Sync activeFilter when initialFilter prop changes (deep linking)
+  // BUG FIX: Track whether this is a prop-driven change so we don't call
+  // onFilterChange (which would reset fromOverview in App.tsx and kill the empty state)
+  const isPropDrivenFilterChange = useRef(false);
   useEffect(() => {
+    isPropDrivenFilterChange.current = true;
     setActiveFilter(initialFilter);
   }, [initialFilter]);
 
   // TICKET 17A BUG FIX: Notify parent when filter changes
-  // This ensures filter state persists across tab switches
+  // Only fires for USER-initiated filter changes, not prop-driven ones
   useEffect(() => {
+    if (isPropDrivenFilterChange.current) {
+      isPropDrivenFilterChange.current = false;
+      return; // Don't call onFilterChange — parent already knows the filter
+    }
     if (onFilterChange) {
       onFilterChange(activeFilter);
     }
@@ -111,6 +141,15 @@ export default function TasksScreen({
     if (isActive && !prevActive.current) {
       console.log('📱 Tasks became active, reloading data');
       loadTasks();
+      
+      // Clear empty state when returning to screen (user left and came back)
+      // Use functional update to avoid adding showEmptyState to deps
+      setShowEmptyState(prev => {
+        if (prev) {
+          console.log('🧹 Clearing showEmptyState on return to Tasks');
+        }
+        return false;
+      });
       
       // TICKET 17F.1: Restore scroll position when returning to screen
       // Use getScrollResponder() - the correct way to scroll a SectionList
@@ -425,131 +464,152 @@ export default function TasksScreen({
     return null;
   };
 
-  if (loading && initialLoad) {
-    return (
-      <View style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>Loading…</Text>
-      </View>
-    );
+  // Determine what to show in the content area.
+  // We NEVER return null or a bare view — the container always renders.
+  // This prevents any background flash during state transitions.
+  
+  const hasAnyTasks = allTasks.length > 0;
+  const hasSections = sections.length > 0;
+  const shouldShowEmpty = showEmptyState || fromOverview;
+
+  // DEBUG LOGGING
+  console.log('🎨 RENDER:', {
+    hasSections,
+    hasAnyTasks,
+    showEmptyState,
+    fromOverview,
+    shouldShowEmpty,
+    activeFilter,
+    loading,
+    initialLoad
+  });
+
+  // Decide content mode — evaluated once per render, no early returns
+  type ContentMode = 'loading' | 'no-tasks' | 'empty-filtered' | 'list';
+  let contentMode: ContentMode = 'list';
+  
+  // CRITICAL FIX: When shouldShowEmpty is true, ALWAYS show empty-filtered mode,
+  // even if hasSections is temporarily true (stale data from previous filter).
+  // This prevents the flash where the old filter's sections briefly show.
+  if (loading && initialLoad && !showEmptyState) {
+    contentMode = 'loading';
+  } else if (shouldShowEmpty && !hasAnyTasks) {
+    // should be showing empty AND no tasks exist = truly empty app
+    contentMode = 'no-tasks';
+  } else if (shouldShowEmpty) {
+    // should be showing empty AND tasks exist = filtered empty state
+    // Show this REGARDLESS of hasSections (which may be stale)
+    contentMode = 'empty-filtered';
+  } else if (!hasSections) {
+    if (!hasAnyTasks) {
+      contentMode = 'no-tasks';
+    } else {
+      // auto-clear case: will be handled in useEffect below
+      contentMode = 'list'; // render the list structure (it'll be empty briefly)
+    }
   }
 
-  // FIX 2: Check if truly empty (no tasks at all)
-  if (!sections.length) {
-    const hasAnyTasks = allTasks.length > 0;
-    
-    if (!hasAnyTasks) {
-      // FIX 2: No tasks exist anywhere - ALWAYS show this message
-      return (
+  console.log('🎨 CONTENT MODE:', contentMode);
+
+  // BUG FIX: Auto-clear filter in useEffect (not during render) to prevent flash.
+  // When filter is empty AND not from Overview, reset to 'all' filter.
+  useEffect(() => {
+    if (!hasSections && hasAnyTasks && !shouldShowEmpty && activeFilter !== 'all') {
+      // This is the auto-clear condition - reset filter
+      setActiveFilter('all');
+      setShowEmptyState(false);
+    }
+  }, [hasSections, hasAnyTasks, shouldShowEmpty, activeFilter]);
+
+  const getEmptyMessage = () => {
+    switch (activeFilter) {
+      case 'today':
+        return { title: 'Nothing scheduled for today', subtitle: 'You have tasks in other categories.' };
+      case 'overdue':
+        return { title: 'All clear!', subtitle: 'No overdue tasks. Great job staying on top of things!' };
+      case 'upcoming':
+        return { title: 'No upcoming tasks', subtitle: 'You have tasks in other categories.' };
+      case 'no-date':
+        return { title: 'All current tasks are organized', subtitle: 'Every task has a due date assigned.' };
+      case 'completed':
+        return { title: 'No completed tasks yet', subtitle: 'Complete some tasks to see them here.' };
+      default:
+        return { title: 'No tasks in this view', subtitle: 'Try a different filter or create new tasks.' };
+    }
+  };
+
+  const emptyMessage = getEmptyMessage();
+
+  return (
+    <View style={styles.container}>
+      {/* TICKET 18A: Notebook identity layer — must be first child */}
+      <NotebookLayer mode={notebookMode} />
+
+      {contentMode === 'loading' && (
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading…</Text>
+        </View>
+      )}
+
+      {contentMode === 'no-tasks' && (
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyTitle}>Nothing here yet</Text>
           <Text style={styles.emptyText}>
             Create a collection and add items to get started.
           </Text>
-
           <TouchableOpacity onPress={goToCollections} style={styles.goToListsButton}>
             <Text style={styles.goToListsText}>Go to Collections</Text>
           </TouchableOpacity>
         </View>
-      );
-    }
-    
-    // FIX 3: Filter has 0 items but tasks exist - auto-clear filter
-    if (!showEmptyState) {
-      // User navigated here not from Overview (e.g., tab switch)
-      // Clear filter and show all tasks
-      if (activeFilter !== 'all') {
-        setActiveFilter('all');
-        setShowEmptyState(false);
-      }
-      // Return null briefly while filter clears
-      return null;
-    }
-    
-    // FIX 1 & 7: Filtered empty state (only when from Overview)
-    // Tasks exist but filter is empty - show category message
-    const getEmptyMessage = () => {
-      switch (activeFilter) {
-        case 'today':
-          return {
-            title: 'Nothing scheduled for today',
-            subtitle: 'You have tasks in other categories.'
-          };
-        case 'overdue':
-          return {
-            title: 'All clear!',
-            subtitle: 'No overdue tasks. Great job staying on top of things!'
-          };
-        case 'upcoming':
-          return {
-            title: 'No upcoming tasks',
-            subtitle: 'You have tasks in other categories.'
-          };
-        case 'no-date':
-          return {
-            title: 'All current tasks are organized',
-            subtitle: 'Every task has a due date assigned.'
-          };
-        case 'completed':
-          return {
-            title: 'No completed tasks yet',
-            subtitle: 'Complete some tasks to see them here.'
-          };
-        default:
-          return {
-            title: 'No tasks in this view',
-            subtitle: 'Try a different filter or create new tasks.'
-          };
-      }
-    };
-    
-    const message = getEmptyMessage();
-    
-    return (
-      <View style={styles.emptyContainer}>
-        <Text style={styles.emptyTitle}>{message.title}</Text>
-        <Text style={styles.emptyText}>{message.subtitle}</Text>
+      )}
 
-        <TouchableOpacity 
-          onPress={() => {
-            setActiveFilter('all');
-            setShowEmptyState(false);  // FIX 1: Don't show empty state again
-          }}
-          style={styles.goToListsButton}
-        >
-          <Text style={styles.goToListsText}>View All Tasks</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          onPress={goToCollections} 
-          style={[styles.goToListsButton, styles.secondaryButton]}
-        >
-          <Text style={[styles.goToListsText, styles.secondaryButtonText]}>
-            Go to Collections
-          </Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.container}>
-      {/* TICKET 17A: Filter indicator - show when not on 'all' */}
-      {activeFilter !== 'all' && (
-        <View style={styles.filterBanner}>
-          <View style={styles.filterBannerContent}>
-            <Text style={styles.filterBannerText}>
-              Filtered: {getFilterLabel(activeFilter)}
+      {contentMode === 'empty-filtered' && (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyTitle}>{emptyMessage.title}</Text>
+          <Text style={styles.emptyText}>{emptyMessage.subtitle}</Text>
+          <TouchableOpacity
+            onPress={() => {
+              // Smooth transition: clear empty state first, then update filter
+              // This prevents the jarring instant switch
+              setShowEmptyState(false);
+              requestAnimationFrame(() => {
+                setActiveFilter('all');
+              });
+            }}
+            style={styles.goToListsButton}
+          >
+            <Text style={styles.goToListsText}>View All Tasks</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={goToCollections}
+            style={[styles.goToListsButton, styles.secondaryButton]}
+          >
+            <Text style={[styles.goToListsText, styles.secondaryButtonText]}>
+              Go to Collections
             </Text>
-            <TouchableOpacity 
-              style={styles.clearFilterButton}
-              onPress={() => setActiveFilter('all')}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.clearFilterText}>Show All</Text>
-            </TouchableOpacity>
-          </View>
+          </TouchableOpacity>
         </View>
       )}
+
+      {contentMode === 'list' && (
+        <>
+        {/* TICKET 17A: Filter indicator */}
+        {activeFilter !== 'all' && (
+          <View style={styles.filterBanner}>
+            <View style={styles.filterBannerContent}>
+              <Text style={styles.filterBannerText}>
+                Filtered: {getFilterLabel(activeFilter)}
+              </Text>
+              <TouchableOpacity 
+                style={styles.clearFilterButton}
+                onPress={() => setActiveFilter('all')}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.clearFilterText}>Show All</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
 
       <SectionList
         ref={scrollViewRef}
@@ -622,12 +682,14 @@ export default function TasksScreen({
             }
           }}
       />
+        </>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f9fafb' },
+  container: { flex: 1, backgroundColor: colors.paperBackground },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingText: { fontSize: 16, color: '#666' },
   
@@ -710,7 +772,7 @@ const styles = StyleSheet.create({
   taskTitle: { fontSize: 16, color: '#1a1a1a' },
   taskTitleCompleted: {
     textDecorationLine: 'line-through',
-    color: '#9ca3af',
+    color: colors.completedText,
   },
   listLabel: {
     fontSize: 12,

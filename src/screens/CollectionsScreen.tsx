@@ -6,6 +6,9 @@ import SelectionMenu, { SelectionOption } from '../components/SelectionMenu';
 import InputModal from '../components/InputModal';
 import MoveToCollectionModal from '../components/MoveToCollectionModal';
 import CreateEntryModal, { CreateEntryPayload } from '../components/CreateEntryModal';
+import NotebookLayer from '../components/NotebookLayer';
+import { useNotebookModeContext } from '../context/NotebookModeContext';
+import { colors } from '../theme/tokens';
 import { EntryType } from '../components/TypeSelector';
 import { Priority } from '../components/PrioritySelector';
 import React, { useState, useEffect, useRef } from 'react';
@@ -60,6 +63,9 @@ export default function CollectionsScreen({
   const [initialLoad, setInitialLoad] = useState(true); // TICKET 17F.1
   const [modalVisible, setModalVisible] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState('');
+  
+  // TICKET 18A: Notebook mode
+  const { mode: notebookMode } = useNotebookModeContext();
 
   const [selectedCollection, setSelectedCollection] = useState<Collection | null>(null);
   const [entries, setEntries] = useState<CollectionEntry[]>([]);
@@ -1422,6 +1428,9 @@ export default function CollectionsScreen({
 
   return (
     <View style={styles.container}>
+      {/* TICKET 18A: Notebook identity layer — must be first child */}
+      <NotebookLayer mode={notebookMode} />
+
       {loading && initialLoad ? (
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>Loading…</Text>
@@ -1571,7 +1580,7 @@ export default function CollectionsScreen({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f9fafb' },
+  container: { flex: 1, backgroundColor: colors.paperBackground },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingText: { fontSize: 16, color: '#666' },
   collectionContainer: { padding: 16, paddingBottom: 100 },

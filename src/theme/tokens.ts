@@ -119,6 +119,24 @@ export const colors = {
   filterBannerBackground: '#3B82F6',
   filterBannerText: '#FFFFFF',
   filterBannerButton: '#FFFFFF',
+
+  // ═══════════════════════════════════════════════════════════
+  // TICKET 18A — NOTEBOOK IDENTITY SYSTEM
+  // ═══════════════════════════════════════════════════════════
+  // Inner pages of the Tetradio notebook.
+  // Overview (metallic cover) is intentionally excluded.
+
+  /** Warm paper tone — default page background for inner screens */
+  paperBackground: '#F8F9F6',
+
+  /** Extremely subtle ruled line (classic mode only) */
+  notebookLine: 'rgba(0,0,0,0.05)',
+
+  /** Subtle margin line (classic mode only) */
+  notebookMargin: 'rgba(0,0,0,0.08)',
+
+  /** Completed task text — muted, readable, calm */
+  completedText: 'rgba(0,0,0,0.4)',
 };
 
 /**

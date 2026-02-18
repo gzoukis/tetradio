@@ -16,6 +16,8 @@ import TasksScreen from './src/screens/TasksScreen';
 import CollectionsScreen from './src/screens/CollectionsScreen';
 import ExpensesScreen from './src/screens/ExpensesScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
+import { NotebookModeContext } from './src/context/NotebookModeContext';
+import { useNotebookMode } from './src/hooks/useNotebookMode';
 import type { TaskFilter } from './src/types/filters';
 
 type Tab = 'overview' | 'tasks' | 'collections' | 'expenses' | 'settings';
@@ -94,6 +96,9 @@ function AppContent() {
   // TICKET 17F: Reduced motion support
   const [reduceMotion, setReduceMotion] = useState(false);
   
+  // TICKET 18A: Notebook mode preference
+  const notebookMode = useNotebookMode();
+  
   // TICKET 17F: Task filter state - using simple state, not object
   const [taskFilter, setTaskFilter] = useState<TaskFilter>('all');
   const [taskFromOverview, setTaskFromOverview] = useState(false);
@@ -125,6 +130,14 @@ function AppContent() {
     
     return () => subscription?.remove();
   }, []);
+
+  // Clear fromOverview flag when navigating AWAY from Tasks
+  // This ensures that when user returns to Tasks, they see the full list
+  useEffect(() => {
+    if (tab !== 'tasks' && taskFromOverview) {
+      setTaskFromOverview(false);
+    }
+  }, [tab, taskFromOverview]);
 
   // TICKET 17F: Navigation handlers with useCallback for stable references
   const handleViewTasks = useCallback((filter?: TaskFilter, fromOverview?: boolean) => {
@@ -195,37 +208,39 @@ function AppContent() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-      <View style={styles.container}>
-        {/* Main content */}
-        <View style={styles.content}>{renderScreen()}</View>
+    <NotebookModeContext.Provider value={notebookMode}>
+      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+        <View style={styles.container}>
+          {/* Main content */}
+          <View style={styles.content}>{renderScreen()}</View>
 
-        {/* Bottom tab bar */}
-        <View
-          style={[
-            styles.tabBar,
-            { paddingBottom: Math.max(insets.bottom, 8) },
-          ]}
-        >
-          {(['overview', 'tasks', 'collections', 'expenses', 'settings'] as Tab[]).map(
-            t => (
-              <TouchableOpacity
-                key={t}
-                style={styles.tab}
-                onPress={() => setTab(t)}
-                accessibilityRole="button"
-                accessibilityLabel={`${t} tab`}
-                accessibilityState={{ selected: tab === t }}
-              >
-                <Text style={tab === t ? styles.tabActive : styles.tabInactive}>
-                  {t.charAt(0).toUpperCase() + t.slice(1)}
-                </Text>
-              </TouchableOpacity>
-            )
-          )}
+          {/* Bottom tab bar */}
+          <View
+            style={[
+              styles.tabBar,
+              { paddingBottom: Math.max(insets.bottom, 8) },
+            ]}
+          >
+            {(['overview', 'tasks', 'collections', 'expenses', 'settings'] as Tab[]).map(
+              t => (
+                <TouchableOpacity
+                  key={t}
+                  style={styles.tab}
+                  onPress={() => setTab(t)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${t} tab`}
+                  accessibilityState={{ selected: tab === t }}
+                >
+                  <Text style={tab === t ? styles.tabActive : styles.tabInactive}>
+                    {t.charAt(0).toUpperCase() + t.slice(1)}
+                  </Text>
+                </TouchableOpacity>
+              )
+            )}
+          </View>
         </View>
-      </View>
-    </SafeAreaView>
+      </SafeAreaView>
+    </NotebookModeContext.Provider>
   );
 }
 
